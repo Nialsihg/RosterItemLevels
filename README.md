@@ -1,7 +1,7 @@
 # RosterItemLevels
 A simple WoW AddOn to see and report your roster item levels.
 
-##Usage
+## Usage
 Minimap icon or command:
 /ilvls [report]
 
