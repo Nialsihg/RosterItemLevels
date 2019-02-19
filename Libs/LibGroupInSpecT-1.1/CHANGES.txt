@@ -1,0 +1,21 @@
+------------------------------------------------------------------------
+r90 | funkydude | 2018-04-25 06:23:22 +0000 (Wed, 25 Apr 2018) | 1 line
+Changed paths:
+   M /trunk/LibGroupInSpecT-1.1.lua
+
+Fixes for addon comm changes in BfA.
+------------------------------------------------------------------------
+r89 | Greltok | 2017-04-22 22:15:15 +0000 (Sat, 22 Apr 2017) | 1 line
+Changed paths:
+   M /trunk/LibGroupInSpecT-1.1.lua
+
+Turn off debug messages by default.
+------------------------------------------------------------------------
+r88 | Greltok | 2017-04-22 20:39:14 +0000 (Sat, 22 Apr 2017) | 1 line
+Changed paths:
+   M /trunk/LibGroupInSpecT-1.1.lua
+   M /trunk/LibGroupInSpecT-1.1.toc
+
+Added event "GroupInSpecT_QueueChanged" and function :IsInspectQueued (guid).
+------------------------------------------------------------------------
+
