@@ -1,5 +1,5 @@
 # RosterItemLevels
-A simple WoW AddOn to see and report your roster item levels.
+A simple WoW AddOn to see and report the item levels of your roster.
 
 ## Usage
 Minimap icon or command:
