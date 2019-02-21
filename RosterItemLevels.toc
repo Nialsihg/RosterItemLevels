@@ -4,7 +4,7 @@
 ## Notes: Allows you to easily see and report the item levels of your roster.
 ## OptionalDependencies: LibStub, CallbackHandler-1.0, LibDataBroker-1.1, LibDBIcon-1.0, LibGroupInSpecT-1.1, AceGUI-3.0, AceGUI-3.0-Completing-EditBox
 ## SavedVariablesPerCharacter: RosterItemLevelsDB, RosterItemLevelsLDBIconDB
-## Version: 1.0
+## Version: 1.0.1
 
 Libs\LibDBIcon-1.0\libs\LibStub\LibStub.lua
 Libs\LibDBIcon-1.0\libs\CallbackHandler-1.0\CallbackHandler-1.0.lua

@@ -153,35 +153,38 @@ end
 
 local function cleanRosterTable()
 	local removedFromRoster = {}
-	for name in pairs(RosterItemLevelsDB.rosterInfo.rosterTable) do
-		if name ~= UnitName("player") then
+	for savedName in pairs(RosterItemLevelsDB.rosterInfo.rosterTable) do
+		if savedName ~= UnitName("player") then
 			local isInRoster = false
 			if IsInRaid() then
 				for i = 1, GetNumGroupMembers() do
 					local unitName = UnitName("raid" .. i)
 					-- Note: UNKNOWNOBJECT means the unit is not fully loaded and we can't get it's name yet.
 					-- Don't remove the unit from rosterTable if we can't get its name.
-					if unitName == name or unitName == UNKNOWNOBJECT then
+					if unitName == savedName or unitName == UNKNOWNOBJECT then
 						isInRoster = true
 					end
 				end
 			elseif IsInGroup() then
 				for i = 1, GetNumSubgroupMembers() do
 					local unitName = UnitName("party" .. i)
-					if unitName == name or unitName == UNKNOWNOBJECT then
+					if unitName == savedName or unitName == UNKNOWNOBJECT then
 						isInRoster = true
 					end
 				end
 			end
 			if not isInRoster then
-				table_insert(removedFromRoster, name)
+				table_insert(removedFromRoster, savedName)
 			end
 		end
 	end
 	for i = 1, #removedFromRoster do
-		RosterItemLevelsDB.rosterInfo.rosterTable[removedFromRoster[i]] = nil
+		local unitName = removedFromRoster[i]
+		leaverTimes[unitName] = GetTime()
+		RosterItemLevelsDB.rosterInfo.rosterTable[unitName] = nil
 	end
 	updateRosterTableDependencies()
+	return #removedFromRoster
 end
 
 local function updateGroupLeader()
@@ -231,12 +234,6 @@ local function unitNameToUnitID(unitName)
 		end
 	end
 	-- no return if unitName is not in our group.
-end
-
-local function removeUnitInfo(unitName)
-	leaverTimes[unitName] = GetTime()
-	RosterItemLevelsDB.rosterInfo.rosterTable[unitName] = nil
-	updateRosterTableDependencies()
 end
 
 local function updateUnitInfo(unitName, unitID, itemLevel)
@@ -321,12 +318,6 @@ local function queryRosterItemLevels()
 		end
 		queryUnitItemLevel("player")
 	end
-end
-
-local function refreshUpdateCycle()
-	ticker:Cancel()
-	queryRosterItemLevels()
-	ticker = C_Timer.NewTicker(updateDelay, queryRosterItemLevels)
 end
 
 local function sendReportMessage(chatType, whisperTarget)
@@ -544,31 +535,20 @@ function frame:PARTY_LEADER_CHANGED()
 	updateGroupLeader()
 end
 
-function frame:CHAT_MSG_SYSTEM(msg)
-	if string_find(msg, "joins the party") then
-		if updater:IsPlaying() then
-			local unitName = string_match(msg, "(%a+) joins the party")
-			queryUnitItemLevel(unitName)
-		end
-	elseif string_find(msg, "has joined the raid group") then
-		if updater:IsPlaying() then
-			local unitName = string_match(msg, "(%a+) has joined the raid group")
-			queryUnitItemLevel(unitName)
-		end
-	elseif string_find(msg, "has left the raid group") then
-		local unitName = string_match(msg, "(%a+) has left the raid group")
-		removeUnitInfo(unitName)
-	elseif string_find(msg, "leaves the party") then
-		local unitName = string_match(msg, "(%a+) leaves the party")
-		removeUnitInfo(unitName)
+function frame:GROUP_ROSTER_UPDATE()  -- A player joined or left the group.
+	local numGroupMembersRemoved = cleanRosterTable()  -- Remove the player from the DB if he left.
+	if updater:IsPlaying() and numGroupMembersRemoved == 0 then
+		-- Start a new update for the player who joined.
+		ticker:Cancel()
+		queryRosterItemLevels()
+		ticker = C_Timer.NewTicker(updateDelay, queryRosterItemLevels)
 	end
 end
 
 function frame:GROUP_LEFT()
 	self:UnregisterEvent("GROUP_LEFT")
-	self:UnregisterEvent("CHAT_MSG_SYSTEM")
 	self:UnregisterEvent("CINEMATIC_STOP")
-	self:UnregisterEvent("PLAYER_ENTERING_WORLD")
+	self:UnregisterEvent("GROUP_ROSTER_UPDATE")
 	self:UnregisterEvent("PARTY_LEADER_CHANGED")
 	if updater:IsPlaying() then
 		toggleOff()
@@ -579,20 +559,11 @@ end
 
 function frame:GROUP_JOINED()
 	self:RegisterEvent("GROUP_LEFT")
-	self:RegisterEvent("CHAT_MSG_SYSTEM")
 	self:RegisterEvent("CINEMATIC_STOP")
-	self:RegisterEvent("PLAYER_ENTERING_WORLD")
+	self:RegisterEvent("GROUP_ROSTER_UPDATE")
 	self:RegisterEvent("PARTY_LEADER_CHANGED")
 	if RosterItemLevelsDB.options.autoToggle then
 		toggleOnAfterDelay(0.5)
-	end
-end
-
-function frame:PLAYER_ENTERING_WORLD()  -- Registers only inside a group.
-	-- We might have missed players joining/leaving the group while in loading screen.
-	cleanRosterTable()
-	if updater:IsPlaying() then 
-		refreshUpdateCycle()  -- For potential new group members.
 	end
 end
 
@@ -600,9 +571,8 @@ function frame:PLAYER_LOGIN()  -- Registers on login / reload.
 	self:RegisterEvent("GROUP_JOINED")
 	if IsInRaid() or IsInGroup() then
 		self:RegisterEvent("GROUP_LEFT")
-		self:RegisterEvent("CHAT_MSG_SYSTEM")
 		self:RegisterEvent("CINEMATIC_STOP")
-		self:RegisterEvent("PLAYER_ENTERING_WORLD")
+		self:RegisterEvent("GROUP_ROSTER_UPDATE")
 		self:RegisterEvent("PARTY_LEADER_CHANGED")
 		LibGroupInspect:Rescan()
 		updateGroupLeader()
