@@ -290,7 +290,7 @@ local function filterMessageSystem(chatFrame, event, msg, ...)
 		if IsInRaid() or IsInGroup() then
 			return false  -- unit is not in the group, don't filter.
 		else
-			return true  -- we left the group but messages from last update can still arrive, keep filtering.
+			return true  -- we left the group but we are still receiving messages from last update, keep filtering.
 		end
 	end
 	updateUnitInfo(unitName, unitID, itemLevel)
@@ -538,7 +538,7 @@ end
 function frame:GROUP_ROSTER_UPDATE()  -- A player joined or left the group.
 	local numGroupMembersRemoved = cleanRosterTable()  -- Remove the player from the DB if he left.
 	if updater:IsPlaying() and numGroupMembersRemoved == 0 then
-		-- Start a new update for the player who joined.
+		-- A player joined, start a new update.
 		ticker:Cancel()
 		queryRosterItemLevels()
 		ticker = C_Timer.NewTicker(updateDelay, queryRosterItemLevels)
@@ -727,7 +727,7 @@ function frame:ADDON_LOADED(name)
 
 	self:RegisterEvent("PLAYER_LOGIN")
 	self:RegisterEvent("PLAYER_LEAVING_WORLD")
-	-- Create an animation that's used to render rosterItemLevelsWindow.
+	-- Create an animation to render rosterItemLevelsWindow.
 	updater = frame:CreateAnimationGroup()
 	updater:SetLooping("REPEAT")
 	animation = updater:CreateAnimation()
