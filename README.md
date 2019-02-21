@@ -5,4 +5,4 @@ A simple WoW Freakz AddOn to see and report the item levels of your roster.
 Minimap icon or command:
 /ilvls [report]
 
-[Showcase](https://imgur.com/a/BS1ax2P.jpg)
+[Screenshot](https://imgur.com/a/BS1ax2P.jpg)
