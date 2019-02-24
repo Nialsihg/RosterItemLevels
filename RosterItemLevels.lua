@@ -1,5 +1,7 @@
 local addonName = "RosterItemLevels"
 
+-- Implement item level in mouseover tooltip.
+
 local frame = CreateFrame("Frame")
 frame:RegisterEvent("ADDON_LOADED")
 
@@ -129,31 +131,31 @@ end
 
 local function sortRosterTableKeys(sortFunction)
 	local keys = {}
-	for unitName in pairs(RosterItemLevelsDB.rosterInfo.rosterTable) do
+	for unitName in pairs(RosterItemLevelsPerCharDB.rosterInfo.rosterTable) do
 		table_insert(keys, unitName)
 	end
 	table_sort(keys, function(unitName1, unitName2)  -- Will exec only if table contains 2 or more elements.
-		return sortFunction(RosterItemLevelsDB.rosterInfo.rosterTable[unitName1].ilvl, RosterItemLevelsDB.rosterInfo.rosterTable[unitName2].ilvl)
+		return sortFunction(RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName1].ilvl, RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName2].ilvl)
 	end)
 	return keys
 end
 
 local function computeAverageRosterItemLevel()
 	local sum = 0
-	for _, unitName in ipairs(RosterItemLevelsDB.rosterInfo.sortedRosterTableKeys) do
-		sum = sum + RosterItemLevelsDB.rosterInfo.rosterTable[unitName].ilvl
+	for _, unitName in ipairs(RosterItemLevelsPerCharDB.rosterInfo.sortedRosterTableKeys) do
+		sum = sum + RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName].ilvl
 	end
-	return math_floor(sum / #RosterItemLevelsDB.rosterInfo.sortedRosterTableKeys + 0.5)  -- rounded up or down and troncated.
+	return math_floor(sum / #RosterItemLevelsPerCharDB.rosterInfo.sortedRosterTableKeys + 0.5)  -- rounded up or down and troncated.
 end
 
 local function updateRosterTableDependencies()
-	RosterItemLevelsDB.rosterInfo.sortedRosterTableKeys = sortRosterTableKeys(sortDesc)
-	RosterItemLevelsDB.rosterInfo.avgRosterItemLevel = computeAverageRosterItemLevel()
+	RosterItemLevelsPerCharDB.rosterInfo.sortedRosterTableKeys = sortRosterTableKeys(sortDesc)
+	RosterItemLevelsPerCharDB.rosterInfo.avgRosterItemLevel = computeAverageRosterItemLevel()
 end
 
 local function cleanRosterTable()
 	local removedFromRoster = {}
-	for savedName in pairs(RosterItemLevelsDB.rosterInfo.rosterTable) do
+	for savedName in pairs(RosterItemLevelsPerCharDB.rosterInfo.rosterTable) do
 		if savedName ~= UnitName("player") then
 			local isInRoster = false
 			if IsInRaid() then
@@ -181,7 +183,7 @@ local function cleanRosterTable()
 	for i = 1, #removedFromRoster do
 		local unitName = removedFromRoster[i]
 		leaverTimes[unitName] = GetTime()
-		RosterItemLevelsDB.rosterInfo.rosterTable[unitName] = nil
+		RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName] = nil
 	end
 	updateRosterTableDependencies()
 	return #removedFromRoster
@@ -189,20 +191,20 @@ end
 
 local function updateGroupLeader()
 	if UnitIsGroupLeader("player") then
-		RosterItemLevelsDB.rosterInfo.leaderName = UnitName("player")
+		RosterItemLevelsPerCharDB.rosterInfo.leaderName = UnitName("player")
 		return
 	end
 	if IsInRaid() then
 		for i = 1, GetNumGroupMembers() do
 			if UnitIsGroupLeader("raid" .. i) then
-				RosterItemLevelsDB.rosterInfo.leaderName = UnitName("raid" .. i)
+				RosterItemLevelsPerCharDB.rosterInfo.leaderName = UnitName("raid" .. i)
 				return
 			end
 		end
 	elseif IsInGroup() then
 		for i = 1, GetNumSubgroupMembers() do
 			if UnitIsGroupLeader("party" .. i) then
-				RosterItemLevelsDB.rosterInfo.leaderName = UnitName("party" .. i)
+				RosterItemLevelsPerCharDB.rosterInfo.leaderName = UnitName("party" .. i)
 				return
 			end
 		end
@@ -211,8 +213,8 @@ end
 
 local function unitNameToUnitID(unitName)
 	-- Look in cache first.
-	if RosterItemLevelsDB.rosterInfo.rosterTable[unitName] and RosterItemLevelsDB.rosterInfo.rosterTable[unitName].lastKnownUnitID then
-		local lastKnownUnitID = RosterItemLevelsDB.rosterInfo.rosterTable[unitName].lastKnownUnitID
+	if RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName] and RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName].lastKnownUnitID then
+		local lastKnownUnitID = RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName].lastKnownUnitID
 		if unitName == UnitName(lastKnownUnitID) then
 			return lastKnownUnitID
 		end
@@ -237,29 +239,29 @@ local function unitNameToUnitID(unitName)
 end
 
 local function updateUnitInfo(unitName, unitID, itemLevel)
-	if not RosterItemLevelsDB.rosterInfo.rosterTable[unitName] then
-		RosterItemLevelsDB.rosterInfo.rosterTable[unitName] = {}
+	if not RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName] then
+		RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName] = {}
 	end
-	if not RosterItemLevelsDB.rosterInfo.rosterTable[unitName].class then
+	if not RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName].class then
 		local _, class = UnitClass(unitID)
-		RosterItemLevelsDB.rosterInfo.rosterTable[unitName].class = class
+		RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName].class = class
 	end
 	local unitInfo = LibGroupInspect:GetCachedInfo(UnitGUID(unitID))  -- Most likely nil if we just relogged/reloaded
 	if unitInfo and unitInfo.global_spec_id and unitInfo.global_spec_id ~= 0 then
-		RosterItemLevelsDB.rosterInfo.rosterTable[unitName].specID = unitInfo.global_spec_id
+		RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName].specID = unitInfo.global_spec_id
 	end
 	if unitInfo and unitInfo.spec_role then
-		RosterItemLevelsDB.rosterInfo.rosterTable[unitName].role = unitInfo.spec_role
-	elseif not RosterItemLevelsDB.rosterInfo.rosterTable[unitName].role then
+		RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName].role = unitInfo.spec_role
+	elseif not RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName].role then
 		-- Use assigned role if we don't have any cached value.
 		-- Note: Assigned role can differ from actual role.
 		local role = UnitGroupRolesAssigned(unitID)
 		if role and role ~= "NONE" then
-			RosterItemLevelsDB.rosterInfo.rosterTable[unitName].role = role
+			RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName].role = role
 		end
 	end
-	RosterItemLevelsDB.rosterInfo.rosterTable[unitName].ilvl = tonumber(itemLevel)
-	RosterItemLevelsDB.rosterInfo.rosterTable[unitName].lastKnownUnitID = unitID
+	RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName].ilvl = tonumber(itemLevel)
+	RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName].lastKnownUnitID = unitID
 	updateRosterTableDependencies()
 end
 
@@ -321,19 +323,19 @@ local function queryRosterItemLevels()
 end
 
 local function sendReportMessage(chatType, whisperTarget)
-	if #RosterItemLevelsDB.rosterInfo.sortedRosterTableKeys < 2 then
+	if #RosterItemLevelsPerCharDB.rosterInfo.sortedRosterTableKeys < 2 then
 		print("There is no data to report.")
 		return
 	end
 	local channel = whisperTarget
 	SendChatMessage(addonName .. " AddOn report:", chatType, nil, channel)
 	SendChatMessage("--------------------------------------------", chatType, nil, channel)
-	for _, unitName in ipairs(RosterItemLevelsDB.rosterInfo.sortedRosterTableKeys) do
-		local reportMessage = "<iLvl>  " .. RosterItemLevelsDB.rosterInfo.rosterTable[unitName].ilvl .. "        " .. unitName
+	for _, unitName in ipairs(RosterItemLevelsPerCharDB.rosterInfo.sortedRosterTableKeys) do
+		local reportMessage = "<iLvl>  " .. RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName].ilvl .. "        " .. unitName
 		SendChatMessage(reportMessage, chatType, nil, channel)
 	end
 	SendChatMessage("--------------------------------------------", chatType, nil, channel)
-	SendChatMessage("<Avg>  " .. RosterItemLevelsDB.rosterInfo.avgRosterItemLevel, chatType, nil, channel)
+	SendChatMessage("<Avg>  " .. RosterItemLevelsPerCharDB.rosterInfo.avgRosterItemLevel, chatType, nil, channel)
 end
 
 local function closeReportWindow()
@@ -449,28 +451,28 @@ end
 local function renderRosterItemLevelsWindow()
 	rosterItemLevelsWindow:ClearLines()
 	rosterItemLevelsWindow:SetText("Roster Item Levels", 1, 1, 1)
-	if #RosterItemLevelsDB.rosterInfo.sortedRosterTableKeys >= 1 then
-		for _, unitName in ipairs(RosterItemLevelsDB.rosterInfo.sortedRosterTableKeys) do
-			if RosterItemLevelsDB.rosterInfo.rosterTable[unitName] then
+	if #RosterItemLevelsPerCharDB.rosterInfo.sortedRosterTableKeys >= 1 then
+		for _, unitName in ipairs(RosterItemLevelsPerCharDB.rosterInfo.sortedRosterTableKeys) do
+			if RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName] then
 				local roleIcon, specIcon, stringLeft = "", "", ""
-				local class = RosterItemLevelsDB.rosterInfo.rosterTable[unitName].class
-				if RosterItemLevelsDB.rosterInfo.rosterTable[unitName].role then
-					roleIcon = "|T" .. roleIconPaths[RosterItemLevelsDB.rosterInfo.rosterTable[unitName].role] .. ":15:15:0:0:64:64:2:56:2:56|t"
+				local class = RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName].class
+				if RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName].role then
+					roleIcon = "|T" .. roleIconPaths[RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName].role] .. ":15:15:0:0:64:64:2:56:2:56|t"
 					stringLeft = roleIcon
 				end
 				if RosterItemLevelsDB.options.spec then
-					if RosterItemLevelsDB.rosterInfo.rosterTable[unitName].specID then
-						specIcon = "|T" .. specIconPaths[RosterItemLevelsDB.rosterInfo.rosterTable[unitName].specID] .. ":15:15:0:0:64:64:2:56:2:56|t"
+					if RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName].specID then
+						specIcon = "|T" .. specIconPaths[RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName].specID] .. ":15:15:0:0:64:64:2:56:2:56|t"
 						stringLeft = stringLeft .. " " .. specIcon
 					end
 				end
 				stringLeft = stringLeft .. " " .. unitName
-				if unitName == RosterItemLevelsDB.rosterInfo.leaderName then
+				if unitName == RosterItemLevelsPerCharDB.rosterInfo.leaderName then
 					stringLeft = stringLeft .. " |T" .. leaderIconPath .. ":15:15:0:0:64:64:2:56:2:56|t"
 				end
 				rosterItemLevelsWindow:AddDoubleLine(
 					stringLeft,
-					RosterItemLevelsDB.rosterInfo.rosterTable[unitName].ilvl,
+					RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName].ilvl,
 					RAID_CLASS_COLORS[class].r,
 					RAID_CLASS_COLORS[class].g,
 					RAID_CLASS_COLORS[class].b,
@@ -479,9 +481,9 @@ local function renderRosterItemLevelsWindow()
 					RAID_CLASS_COLORS[class].b)
 			end
 		end
-		if #RosterItemLevelsDB.rosterInfo.sortedRosterTableKeys >= 2 then
+		if #RosterItemLevelsPerCharDB.rosterInfo.sortedRosterTableKeys >= 2 then
 			rosterItemLevelsWindow:AddLine(" ", 1, 1, 1)
-			rosterItemLevelsWindow:AddDoubleLine("Average (" .. #RosterItemLevelsDB.rosterInfo.sortedRosterTableKeys .. ")", RosterItemLevelsDB.rosterInfo.avgRosterItemLevel, 1, 1, 1, 1, 1, 1)
+			rosterItemLevelsWindow:AddDoubleLine("Average (" .. #RosterItemLevelsPerCharDB.rosterInfo.sortedRosterTableKeys .. ")", RosterItemLevelsPerCharDB.rosterInfo.avgRosterItemLevel, 1, 1, 1, 1, 1, 1)
 		end
 	end
 	rosterItemLevelsWindow:Show()
@@ -553,8 +555,8 @@ function frame:GROUP_LEFT()
 	if updater:IsPlaying() then
 		toggleOff()
 	end
-	wipe(RosterItemLevelsDB.rosterInfo.rosterTable)
-	wipe(RosterItemLevelsDB.rosterInfo.sortedRosterTableKeys)
+	wipe(RosterItemLevelsPerCharDB.rosterInfo.rosterTable)
+	wipe(RosterItemLevelsPerCharDB.rosterInfo.sortedRosterTableKeys)
 end
 
 function frame:GROUP_JOINED()
@@ -581,8 +583,8 @@ function frame:PLAYER_LOGIN()  -- Registers on login / reload.
 		end
 	else
 		-- Wipe old data in case we left a group while we were reloging or reloading.
-		wipe(RosterItemLevelsDB.rosterInfo.rosterTable)
-		wipe(RosterItemLevelsDB.rosterInfo.sortedRosterTableKeys)
+		wipe(RosterItemLevelsPerCharDB.rosterInfo.rosterTable)
+		wipe(RosterItemLevelsPerCharDB.rosterInfo.sortedRosterTableKeys)
 	end
 end
 
@@ -590,20 +592,10 @@ function frame:ADDON_LOADED(name)
 	if name ~= addonName then
 		return
 	end
+
+	-- RosterItemLevelsDB
 	if type(RosterItemLevelsDB) ~= "table" then
 		RosterItemLevelsDB = {}
-	end
-	if type(RosterItemLevelsDB.rosterInfo) ~= "table" then
-		RosterItemLevelsDB.rosterInfo = {}
-	end
-	if type(RosterItemLevelsDB.rosterInfo.rosterTable) ~= "table" then
-		-- We store roster data informations inside a saved variable so that we don't lose it when we relog or reload.
-		-- Especially for specID and role which takes time to get due to inspection delays.
-		-- Saved specID and role are used until we receive updated values.
-		RosterItemLevelsDB.rosterInfo.rosterTable = {}
-	end
-	if type(RosterItemLevelsDB.rosterInfo.sortedRosterTableKeys) ~= "table" then
-		RosterItemLevelsDB.rosterInfo.sortedRosterTableKeys = {}
 	end
 	if type(RosterItemLevelsDB.window) ~= "table" then
 		RosterItemLevelsDB.window = {}
@@ -630,6 +622,23 @@ function frame:ADDON_LOADED(name)
 		RosterItemLevelsDB.report = {}
 	end
 	
+	-- RosterItemLevelsPerCharDB
+	if type(RosterItemLevelsPerCharDB) ~= "table" then
+		RosterItemLevelsPerCharDB = {}
+	end
+	if type(RosterItemLevelsPerCharDB.rosterInfo) ~= "table" then
+		RosterItemLevelsPerCharDB.rosterInfo = {}
+	end
+	if type(RosterItemLevelsPerCharDB.rosterInfo.rosterTable) ~= "table" then
+		-- We store roster data informations inside a saved variable so that we don't lose it when we relog or reload.
+		-- Especially for specID and role which takes time to get due to inspection delays.
+		-- Saved specID and role are used until we receive updated values.
+		RosterItemLevelsPerCharDB.rosterInfo.rosterTable = {}
+	end
+	if type(RosterItemLevelsPerCharDB.rosterInfo.sortedRosterTableKeys) ~= "table" then
+		RosterItemLevelsPerCharDB.rosterInfo.sortedRosterTableKeys = {}
+	end
+
 	-- Minimap icon
 	if minimapIcon and not minimapIcon:IsRegistered(addonName .. "LDB") then
 		minimapIcon:Register(addonName .. "LDB", rosterItemLevelsLDB, RosterItemLevelsDB.options.minimap)  -- Register and display icon on minimap.
