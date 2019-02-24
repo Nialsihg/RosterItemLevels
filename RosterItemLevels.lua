@@ -1,7 +1,5 @@
 local addonName = "RosterItemLevels"
 
--- Implement item level in mouseover tooltip.
-
 local frame = CreateFrame("Frame")
 frame:RegisterEvent("ADDON_LOADED")
 
@@ -156,8 +154,8 @@ end
 local function resetRosterInfo()
 	wipe(RosterItemLevelsPerCharDB.rosterInfo.rosterTable)
 	wipe(RosterItemLevelsPerCharDB.rosterInfo.sortedRosterTableKeys)
-	RosterItemLevelsPerCharDB.rosterInfo.leaderName = nil
-	RosterItemLevelsPerCharDB.rosterInfo.avgRosterItemLevel = nil
+	RosterItemLevelsPerCharDB.rosterInfo.leaderName = ""
+	RosterItemLevelsPerCharDB.rosterInfo.avgRosterItemLevel = 0
 end
 
 local function cleanRosterTable()
@@ -536,7 +534,7 @@ function frame:CINEMATIC_STOP()
 end
 
 function frame:PLAYER_LEAVING_WORLD()
-	RosterItemLevelsDB.window.wasShown = rosterItemLevelsWindow:IsShown()  -- save window state in DB in case of a reload/relog.
+	RosterItemLevelsPerCharDB.window.wasShown = rosterItemLevelsWindow:IsShown()  -- save window state in DB in case of a reload/relog.
 end
 
 function frame:PARTY_LEADER_CHANGED()
@@ -583,7 +581,7 @@ function frame:PLAYER_LOGIN()  -- Registers on login / reload.
 		self:RegisterEvent("PARTY_LEADER_CHANGED")
 		LibGroupInspect:Rescan()
 		updateGroupLeader()
-		if RosterItemLevelsDB.window.wasShown then
+		if RosterItemLevelsPerCharDB.window.wasShown then
 			toggleOnAfterDelay(0.5)
 		end
 	else
@@ -629,6 +627,9 @@ function frame:ADDON_LOADED(name)
 	-- RosterItemLevelsPerCharDB
 	if type(RosterItemLevelsPerCharDB) ~= "table" then
 		RosterItemLevelsPerCharDB = {}
+	end
+	if type(RosterItemLevelsPerCharDB.window) ~= "table" then
+		RosterItemLevelsPerCharDB.window = {}
 	end
 	if type(RosterItemLevelsPerCharDB.rosterInfo) ~= "table" then
 		RosterItemLevelsPerCharDB.rosterInfo = {}
