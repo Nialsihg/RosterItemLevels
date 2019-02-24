@@ -18,7 +18,7 @@ local specIconCheckButton = CreateFrame("CheckButton", addonName .. "ShowSpec", 
 -- Used to create a report window.
 local AceGUI = LibStub("AceGUI-3.0")
 local AutoComplete = LibStub("AceGUI-3.0-Completing-EditBox")
-local reportWindow  -- Stores AceGUI's Window container object.
+local reportWindow  -- Used to store AceGUI's Window container object.
 
 -- Load libs for minimap icon.
 local rosterItemLevelsLDB = LibStub("LibDataBroker-1.1"):NewDataObject(addonName .. "LDB", {
@@ -32,7 +32,7 @@ local minimapIcon = LibStub("LibDBIcon-1.0")
 -- Used to get the specialization and role of a unit.
 local LibGroupInspect = LibStub("LibGroupInSpecT-1.1")
 
-local leaverTimes = {}
+local rosterLeaversTimes = {}
 local updateDelay = 5  -- Elapsed time between updates in seconds.
 local timer, ticker, updater, animation, processedChatFrame
 
@@ -153,6 +153,13 @@ local function updateRosterTableDependencies()
 	RosterItemLevelsPerCharDB.rosterInfo.avgRosterItemLevel = computeAverageRosterItemLevel()
 end
 
+local function resetRosterInfo()
+	wipe(RosterItemLevelsPerCharDB.rosterInfo.rosterTable)
+	wipe(RosterItemLevelsPerCharDB.rosterInfo.sortedRosterTableKeys)
+	RosterItemLevelsPerCharDB.rosterInfo.leaderName = nil
+	RosterItemLevelsPerCharDB.rosterInfo.avgRosterItemLevel = nil
+end
+
 local function cleanRosterTable()
 	local removedFromRoster = {}
 	for savedName in pairs(RosterItemLevelsPerCharDB.rosterInfo.rosterTable) do
@@ -182,7 +189,7 @@ local function cleanRosterTable()
 	end
 	for i = 1, #removedFromRoster do
 		local unitName = removedFromRoster[i]
-		leaverTimes[unitName] = GetTime()
+		rosterLeaversTimes[unitName] = GetTime()
 		RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName] = nil
 	end
 	updateRosterTableDependencies()
@@ -282,8 +289,8 @@ local function filterMessageSystem(chatFrame, event, msg, ...)
 		return true  -- filter the message from all chatFrames but only process data from processedChatFrame.
 	end
 	local unitName, itemLevel = string_match(msg, "Equipped ilvl for (%a+): ([0-9]+)")
-	if leaverTimes[unitName] then
-		if GetTime() - leaverTimes[unitName] <= 1 then
+	if rosterLeaversTimes[unitName] then
+		if GetTime() - rosterLeaversTimes[unitName] <= 1 then
 			return true  -- we received a message for a unit that just left the group, filter it.
 		end
 	end
@@ -322,12 +329,11 @@ local function queryRosterItemLevels()
 	end
 end
 
-local function sendReportMessage(chatType, whisperTarget)
+local function sendReportMessage(chatType, channel)
 	if #RosterItemLevelsPerCharDB.rosterInfo.sortedRosterTableKeys < 2 then
 		print("There is no data to report.")
 		return
 	end
-	local channel = whisperTarget
 	SendChatMessage(addonName .. " AddOn report:", chatType, nil, channel)
 	SendChatMessage("--------------------------------------------", chatType, nil, channel)
 	for _, unitName in ipairs(RosterItemLevelsPerCharDB.rosterInfo.sortedRosterTableKeys) do
@@ -555,8 +561,7 @@ function frame:GROUP_LEFT()
 	if updater:IsPlaying() then
 		toggleOff()
 	end
-	wipe(RosterItemLevelsPerCharDB.rosterInfo.rosterTable)
-	wipe(RosterItemLevelsPerCharDB.rosterInfo.sortedRosterTableKeys)
+	resetRosterInfo()
 end
 
 function frame:GROUP_JOINED()
@@ -583,8 +588,7 @@ function frame:PLAYER_LOGIN()  -- Registers on login / reload.
 		end
 	else
 		-- Wipe old data in case we left a group while we were reloging or reloading.
-		wipe(RosterItemLevelsPerCharDB.rosterInfo.rosterTable)
-		wipe(RosterItemLevelsPerCharDB.rosterInfo.sortedRosterTableKeys)
+		resetRosterInfo()
 	end
 end
 
