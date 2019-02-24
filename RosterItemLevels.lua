@@ -2,6 +2,7 @@ local addonName = "RosterItemLevels"
 
 local frame = CreateFrame("Frame")
 frame:RegisterEvent("ADDON_LOADED")
+frame:RegisterEvent("PLAYER_TARGET_CHANGED")
 
 local rosterItemLevelsWindow = CreateFrame("GameTooltip", addonName .. "Frame", UIParent, "GameTooltipTemplate")
 
@@ -524,6 +525,13 @@ local function toggleOnAfterDelay(delay)
 			toggleOn()
 		end
 	end)
+end
+
+function frame:PLAYER_TARGET_CHANGED()
+	if CanInspect("target") and RosterItemLevelsPerCharDB.rosterInfo.rosterTable[UnitName("target")] then
+		-- GameTooltip:AddDoubleLine("Item Level", RosterItemLevelsPerCharDB.rosterInfo.rosterTable[UnitName("target")].ilvl)
+		-- GameTooltip:Show()
+	end
 end
 
 function frame:CINEMATIC_STOP()
