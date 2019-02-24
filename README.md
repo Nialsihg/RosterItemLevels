@@ -1,5 +1,5 @@
 # RosterItemLevels
-A simple WoW Freakz AddOn to see and report the item levels of your roster.
+A simple WoW Freakz AddOn to see and report the item levels of people in your group.
 
 ## Usage
 Minimap icon or command:
