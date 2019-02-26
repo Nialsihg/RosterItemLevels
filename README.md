@@ -1,5 +1,5 @@
 # RosterItemLevels
-A simple WoW Freakz AddOn to quickly see the item levels of people.
+Allows you to quickly see the item levels of people.
 
 ## Features
 * [Show the item level in the gametooltip when you mouseover a player.](https://imgur.com/H36uDo1.jpg)
