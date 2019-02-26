@@ -1,7 +1,7 @@
 ## Interface: 70200
 ## Title: RosterItemLevels
 ## Author: Nialsihg/Littlebit
-## Notes: Allows you to easily see and report the item levels of your roster.
+## Notes: Allows you to quickly see the item levels of people.
 ## OptionalDependencies: LibStub, CallbackHandler-1.0, LibDataBroker-1.1, LibDBIcon-1.0, LibGroupInSpecT-1.1, AceGUI-3.0, AceGUI-3.0-Completing-EditBox
 ## SavedVariables: RosterItemLevelsDB, RosterItemLevelsLDBIconDB
 ## SavedVariablesPerCharacter: RosterItemLevelsPerCharDB
