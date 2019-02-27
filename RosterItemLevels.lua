@@ -276,10 +276,11 @@ end
 
 local function filterMessageSystem(chatFrame, event, msg, ...)
 	if string_find(msg, "Invalid character") then
-		return true  -- filter "Invalid character" which might be returned by .ilvl command.
+		-- Note: "Invalid character" is returned by the command .ilvl under unknown conditions.
+		return true
 	end
-	if not string_find(msg, "Equipped ilvl for") then
-		return false  -- not the message we'r looking for, don't filter.
+	if not string_find(msg, "Equipped ilvl for") and not string_find(msg, "Equipped ilvl pentru") then
+		return false  -- not the message we are looking for, don't filter.
 	end
 	if not processedChatFrame then
 		processedChatFrame = chatFrame  -- saves the chatFrame that we want to process data from.
@@ -288,6 +289,9 @@ local function filterMessageSystem(chatFrame, event, msg, ...)
 		return true  -- filter the message from all chatFrames but only process data from processedChatFrame.
 	end
 	local unitName, itemLevel = string_match(msg, "Equipped ilvl for (%a+): ([0-9]+)")
+	if not unitName then  -- server response is in Romanian.
+		unitName, itemLevel = string_match(msg, "Equipped ilvl pentru (%a+): ([0-9]+)")
+	end
 	if mouseoverItemLevelQueries[unitName] then
 		mouseoverredPlayersTable[unitName].ilvl = itemLevel
 		mouseoverredPlayersTable[unitName].lastUpdateTime = GetTime()
