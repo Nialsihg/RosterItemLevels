@@ -275,11 +275,8 @@ local function updateUnitInfo(unitName, unitID, itemLevel)
 end
 
 local function filterMessageSystem(chatFrame, event, msg, ...)
-	-- Note: Ugly work around. A proper fix would require to treat the cause of those messages.
-	-- Filter "Away" message flood when going AFK with window toggled on. Related to the use of the EMOTE channeL.
-	-- Filter "Invalid character" which might be returned by .ilvl command.
-	if string_find(msg, "Invalid character") or string_find(msg, "You are now Away") or string_find(msg, "You are no longer Away") then
-		return true  
+	if string_find(msg, "Invalid character") then
+		return true  -- filter "Invalid character" which might be returned by .ilvl command.
 	end
 	if not string_find(msg, "Equipped ilvl for") then
 		return false  -- not the message we'r looking for, don't filter.
@@ -330,6 +327,12 @@ local function filterMessageSystem(chatFrame, event, msg, ...)
 end
 
 local function queryUnitItemLevel(unitNameOrID)
+	if UnitIsAFK("player") or UnitIsDeadOrGhost("player") then
+		-- Note: When AFK, sending a message in the EMOTE channel switches your status to Available just for a short period.
+		-- Prevents message system: "You are now Away" / "You are no longer Away" from spamming the chat.
+		-- Prevents error message: "You can't chat when you're dead!" due to the use of the EMOTE channel.
+		return
+	end
 	local unitName = UnitName(unitNameOrID) or unitNameOrID
 	if unitName then
 		SendChatMessage(".ilvl " .. unitName, "EMOTE")  -- Will call filterMessageSystem() on server response.
@@ -337,9 +340,6 @@ local function queryUnitItemLevel(unitNameOrID)
 end
 
 local function queryRosterItemLevels()
-	if UnitIsDeadOrGhost("player") then
-		return  -- Prevents error message: "You can't chat when you're dead!" due to the use of the EMOTE channel.
-	end 
 	if IsInRaid() then
 		for i = 1, GetNumGroupMembers() do
 			queryUnitItemLevel("raid" .. i)
