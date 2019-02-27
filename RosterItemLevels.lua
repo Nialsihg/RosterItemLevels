@@ -3,7 +3,8 @@ local addonName = "RosterItemLevels"
 local frame = CreateFrame("Frame")
 frame:RegisterEvent("ADDON_LOADED")
 
-local rosterItemLevelsWindow = CreateFrame("GameTooltip", addonName .. "Frame", UIParent, "GameTooltipTemplate")
+local rosterItemLevelsTooltip = CreateFrame("GameTooltip", addonName .. "Frame", UIParent, "GameTooltipTemplate")
+local rosterItemLevelsDropDownFrame = CreateFrame("Frame", addonName .. "DropdownFrame", rosterItemLevelsTooltip, "UIDropDownMenuTemplate")
 
 -- Options Panel.
 local optionsPanel = CreateFrame("Frame")
@@ -481,9 +482,9 @@ local function openReportWindow()
 	reportWindow:AddChild(reportButton)
 end
 
-local function renderRosterItemLevelsWindow()
-	rosterItemLevelsWindow:ClearLines()
-	rosterItemLevelsWindow:SetText("Roster Item Levels", 1, 1, 1)
+local function renderRosterItemLevelsTooltip()
+	rosterItemLevelsTooltip:ClearLines()
+	rosterItemLevelsTooltip:SetText("Roster Item Levels", 1, 1, 1)
 	if #RosterItemLevelsPerCharDB.rosterInfo.sortedRosterTableKeys >= 1 then
 		for _, unitName in ipairs(RosterItemLevelsPerCharDB.rosterInfo.sortedRosterTableKeys) do
 			if RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName] then
@@ -503,7 +504,7 @@ local function renderRosterItemLevelsWindow()
 				if unitName == RosterItemLevelsPerCharDB.rosterInfo.leaderName then
 					stringLeft = stringLeft .. " |T" .. leaderIconPath .. ":15:15:0:0:64:64:2:56:2:56|t"
 				end
-				rosterItemLevelsWindow:AddDoubleLine(
+				rosterItemLevelsTooltip:AddDoubleLine(
 					stringLeft,
 					RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName].ilvl,
 					RAID_CLASS_COLORS[class].r,
@@ -515,25 +516,25 @@ local function renderRosterItemLevelsWindow()
 			end
 		end
 		if #RosterItemLevelsPerCharDB.rosterInfo.sortedRosterTableKeys >= 2 then
-			rosterItemLevelsWindow:AddLine(" ", 1, 1, 1)
-			rosterItemLevelsWindow:AddDoubleLine(
+			rosterItemLevelsTooltip:AddLine(" ", 1, 1, 1)
+			rosterItemLevelsTooltip:AddDoubleLine(
 				"Average (" .. #RosterItemLevelsPerCharDB.rosterInfo.sortedRosterTableKeys .. ")",
 				RosterItemLevelsPerCharDB.rosterInfo.avgRosterItemLevel, 1, 1, 1, 1, 1, 1)
 		end
 	end
-	rosterItemLevelsWindow:Show()
+	rosterItemLevelsTooltip:Show()
 end
 
 local function toggleOffRosterWindow()
 	ticker:Cancel()
 	updater:Stop()
-	rosterItemLevelsWindow:Hide()
+	rosterItemLevelsTooltip:Hide()
 end
 
 local function toggleOnRosterWindow()
-	rosterItemLevelsWindow:Show()
-	rosterItemLevelsWindow:SetOwner(UIParent, "ANCHOR_PRESERVE")
-	updater:SetScript("OnLoop", renderRosterItemLevelsWindow)
+	rosterItemLevelsTooltip:Show()
+	rosterItemLevelsTooltip:SetOwner(UIParent, "ANCHOR_PRESERVE")
+	updater:SetScript("OnLoop", renderRosterItemLevelsTooltip)
 	updater:Play()
 	queryRosterItemLevels()
 	ticker = C_Timer.NewTicker(updateDelay, queryRosterItemLevels)
@@ -605,12 +606,12 @@ end
 function frame:CINEMATIC_STOP()
 	-- Fix a bug were the window would lose its owner after a cinematic.
 	if updater:IsPlaying() then  -- window was shown before the cinematic, set his owner back.
-		rosterItemLevelsWindow:SetOwner(UIParent, "ANCHOR_PRESERVE")
+		rosterItemLevelsTooltip:SetOwner(UIParent, "ANCHOR_PRESERVE")
 	end
 end
 
 function frame:PLAYER_LEAVING_WORLD()
-	RosterItemLevelsPerCharDB.window.wasShown = rosterItemLevelsWindow:IsShown()  -- save window state in DB in case of a reload/relog.
+	RosterItemLevelsPerCharDB.window.wasShown = rosterItemLevelsTooltip:IsShown()  -- save window state in DB in case of a reload/relog.
 end
 
 function frame:PARTY_LEADER_CHANGED()
@@ -680,6 +681,9 @@ function frame:ADDON_LOADED(name)
 	end
 	if RosterItemLevelsDB.window.point == nil then
 		RosterItemLevelsDB.window.point = "CENTER"
+	end
+	if RosterItemLevelsDB.window.locked == nil then
+		RosterItemLevelsDB.window.locked = false
 	end
 	if type(RosterItemLevelsDB.options) ~= "table" then
 		RosterItemLevelsDB.options = {}
@@ -805,33 +809,63 @@ function frame:ADDON_LOADED(name)
 		tileSize = 16,
 		insets = { left = 2, right = 14, top = 2, bottom = 2 }
 	}
-	rosterItemLevelsWindow:SetFrameStrata("LOW")
-	rosterItemLevelsWindow:SetBackdrop(frameBackdrop)
-	rosterItemLevelsWindow:SetPoint(RosterItemLevelsDB.window.point, UIParent, RosterItemLevelsDB.window.point, RosterItemLevelsDB.window.x, RosterItemLevelsDB.window.y)
-	rosterItemLevelsWindow:SetHeight(64)
-	rosterItemLevelsWindow:SetWidth(64)
-	rosterItemLevelsWindow:EnableMouse(true)
-	rosterItemLevelsWindow:SetMovable(1)
-	GameTooltip_OnLoad(rosterItemLevelsWindow)
-	rosterItemLevelsWindow:SetPadding(16, 0)
-	rosterItemLevelsWindow:RegisterForDrag("LeftButton")
-	rosterItemLevelsWindow:SetScript("OnDragStart", function(self)
-		self:StartMoving()
+	rosterItemLevelsTooltip:SetFrameStrata("LOW")
+	rosterItemLevelsTooltip:SetBackdrop(frameBackdrop)
+	rosterItemLevelsTooltip:SetPoint(RosterItemLevelsDB.window.point, UIParent, RosterItemLevelsDB.window.point, RosterItemLevelsDB.window.x, RosterItemLevelsDB.window.y)
+	rosterItemLevelsTooltip:SetHeight(64)
+	rosterItemLevelsTooltip:SetWidth(64)
+	rosterItemLevelsTooltip:EnableMouse(true)
+	rosterItemLevelsTooltip:SetMovable(1)
+	GameTooltip_OnLoad(rosterItemLevelsTooltip)
+	rosterItemLevelsTooltip:SetPadding(16, 0)
+	rosterItemLevelsTooltip:RegisterForDrag("LeftButton")
+	rosterItemLevelsTooltip:SetScript("OnDragStart", function(self)
+		if not RosterItemLevelsDB.window.locked then
+			self:StartMoving()
+		end
 	end)
-	rosterItemLevelsWindow:SetScript("OnDragStop", function(self)
+	rosterItemLevelsTooltip:SetScript("OnDragStop", function(self)
 		self:StopMovingOrSizing()
 		local point, _, _, x, y = self:GetPoint(1)
 		RosterItemLevelsDB.window.x = x
 		RosterItemLevelsDB.window.y = y
 		RosterItemLevelsDB.window.point = point
 	end)
-	
+	rosterItemLevelsTooltip:SetScript("OnMouseDown", function(self, button)
+		if button == "RightButton" then
+			if _G["DropDownList1"]:IsShown() and UIDROPDOWNMENU_OPEN_MENU == rosterItemLevelsDropDownFrame then
+				CloseDropDownMenus()
+			else
+				UIDropDownMenu_Initialize(rosterItemLevelsDropDownFrame, function(dropdownFrame, level, menuList)
+					local info
+					if level == 1 then
+						info = UIDropDownMenu_CreateInfo()
+						info.text = HIDE
+						info.notCheckable = true
+						info.func = function() toggleOffRosterWindow() end
+						info.arg1 = rosterItemLevelsTooltip
+						UIDropDownMenu_AddButton(info, 1)
+
+						info = UIDropDownMenu_CreateInfo()
+						info.text = LOCK_FRAME
+						if RosterItemLevelsDB.window.locked then
+							info.checked = true
+						end
+						info.func = function() RosterItemLevelsDB.window.locked = not RosterItemLevelsDB.window.locked end
+						UIDropDownMenu_AddButton(info, 1)
+					end
+				end)
+				ToggleDropDownMenu(1, nil, rosterItemLevelsDropDownFrame, "cursor", 5, -10)
+			end
+		end
+	end)
+
 	SLASH_ROSTERITEMLEVELS1 = "/ilvls"
 
 	self:RegisterEvent("PLAYER_LOGIN")
 	self:RegisterEvent("PLAYER_LEAVING_WORLD")
 
-	-- Create an animation to render rosterItemLevelsWindow.
+	-- Create an animation to render rosterItemLevelsTooltip.
 	updater = frame:CreateAnimationGroup()
 	updater:SetLooping("REPEAT")
 	animation = updater:CreateAnimation()
