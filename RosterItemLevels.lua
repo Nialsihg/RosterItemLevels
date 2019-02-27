@@ -465,7 +465,7 @@ local function openReportWindow()
 				return
 			end
 		elseif channel == 6 then
-			if UnitExists("target") and UnitIsPlayer("target") then
+			if UnitExists("target") and UnitIsPlayer("target") and UnitIsConnected("target") then
 				sendReportMessage("WHISPER", UnitName("target"))
 			else
 				print("Whisper target not found.")
@@ -565,8 +565,8 @@ local function mouseoverTooltipHook()
 					GameTooltip:Show()
 				else  -- data is too old, send new ilvl query
 					if not mouseoverItemLevelQueries[unitName] then  -- make sure a query is not already pending.
-						queryUnitItemLevel(unitName)
 						mouseoverItemLevelQueries[unitName] = true
+						queryUnitItemLevel(unitName)
 					end
 				end
 			else  -- first time we mouseover this unit.
@@ -576,8 +576,8 @@ local function mouseoverTooltipHook()
 					mouseoverredPlayersTable[unitName].class = class
 				end
 				if not mouseoverItemLevelQueries[unitName] then
-					queryUnitItemLevel(unitName)
 					mouseoverItemLevelQueries[unitName] = true
+					queryUnitItemLevel(unitName)
 				end
 			end
 		else  -- isn't connected, can't refresh his ilvl so look for a cached value.
