@@ -38,7 +38,7 @@ local minimapIcon = LibStub("LibDBIcon-1.0")
 -- Used to get the specialization and role of a unit.
 local LibGroupInspect = LibStub("LibGroupInSpecT-1.1")
 
-local timeGroupLeftOnUpdate = 0
+local timeGroupLeftDuringUpdate = 0
 local updateDelay = 5  -- Elapsed time between updates in seconds.
 local ticker, updater, animation, processedChatFrame
 local mouseoverredPlayersTable, mouseoverItemLevelQueries, rosterLeaversTimes = {}, {}, {}
@@ -58,13 +58,13 @@ local highItemLevelColors = {
 	[5] = {255, 0, 0}      -- to RED
 }
 
-local leaderIconPath = [[Interface\GROUPFRAME\UI-Group-LeaderIcon]]
-local roleIconPaths = {  -- ElvUI's role icon files.
+local leaderIcon = [[Interface\GROUPFRAME\UI-Group-LeaderIcon]]
+local roleIcons = {  -- ElvUI's role icon files.
 	TANK = "Interface\\AddOns\\" .. addonName .. "\\textures\\tank",
 	HEALER = "Interface\\AddOns\\" .. addonName .. "\\textures\\healer",
 	DAMAGER = "Interface\\AddOns\\" .. addonName .. "\\textures\\dps"
 }
-local specIconPaths = {
+local specIcons = {
 	[577] = [[Interface\Icons\ability_demonhunter_specdps]],		-- Havoc Demon Hunter
 	[581] = [[Interface\Icons\ability_demonhunter_spectank]],		-- Vengeance Demon Hunter
 
@@ -145,6 +145,10 @@ local function print(...)
 	_G.print("|cff259054" .. addonName .. ":|r", ...)
 end
 
+local function formatIconForTooltip(icon)
+	return "|T" .. icon .. ":15:15:0:0:64:64:2:56:2:56|t"
+end
+
 local function trim(s)  -- from http://lua-users.org/wiki/StringTrim
 	local from = s:match"^%s*()"
 	return from > #s and "" or s:match(".*%S", from)
@@ -186,6 +190,18 @@ local function getItemLevelColor(unitName)
 	end
 	local class = mouseoverredPlayersTable[unitName].class
 	return RAID_CLASS_COLORS[class].r, RAID_CLASS_COLORS[class].g, RAID_CLASS_COLORS[class].b
+end
+
+local function isValidCharacterName(unitName)
+	-- Character name must be between 2-12 characters long and must contain only letters [a-z-A-Z].
+	if unitName then
+		if #unitName >= 2 and #unitName <= 12 then
+			if nil == string_match(unitName, "[^%a]") then
+				return true
+			end
+		end
+	end
+	return false
 end
 
 local function sortDesc(a, b)
@@ -336,10 +352,6 @@ local function updateUnitInfo(unitName, unitID, itemLevel)
 end
 
 local function filterMessageSystem(chatFrame, event, msg, ...)
-	if string_find(msg, "Invalid character") then
-		-- Note: "Invalid character" is returned by the command .ilvl under unknown conditions.
-		return true
-	end
 	if not string_find(msg, "Equipped ilvl for") and not string_find(msg, "Equipped ilvl pentru") then
 		return false  -- not the message we are looking for, don't filter.
 	end
@@ -365,7 +377,7 @@ local function filterMessageSystem(chatFrame, event, msg, ...)
 		return true  -- filter messages sent from mouseovers.
 	end
 	if not updater:IsPlaying() then
-		if GetTime() - timeGroupLeftOnUpdate <= 1 then
+		if GetTime() - timeGroupLeftDuringUpdate <= 1 then
 			return true  -- we just left the group but we are still receiving messages from last update, keep filtering.
 		end
 		return false  -- roster window is not open, don't filter.
@@ -387,14 +399,14 @@ local function filterMessageSystem(chatFrame, event, msg, ...)
 end
 
 local function queryUnitItemLevel(unitNameOrID)
-	if UnitIsDeadOrGhost("player") then
+	if UnitIsAFK("player") or UnitIsDeadOrGhost("player") then
 		-- Note: When AFK, sending a message in the EMOTE channel switches your status to Available just for a short period.
 		-- Prevents message system: "You are now Away" / "You are no longer Away" from spamming the chat.
 		-- Prevents error message: "You can't chat when you're dead!" due to the use of the EMOTE channel.
 		return
 	end
 	local unitName = UnitName(unitNameOrID) or unitNameOrID
-	if unitName then
+	if isValidCharacterName(unitName) then
 		SendChatMessage(".ilvl " .. unitName, "EMOTE")  -- Will call filterMessageSystem() on server response.
 	end
 end
@@ -543,29 +555,23 @@ local function renderRosterItemLevelsTooltip()
 	if #RosterItemLevelsPerCharDB.rosterInfo.sortedRosterTableKeys >= 1 then
 		for _, unitName in ipairs(RosterItemLevelsPerCharDB.rosterInfo.sortedRosterTableKeys) do
 			if RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName] then
-				local roleIcon, specIcon, stringLeft = "", "", ""
+				local roleIcon, specIcon, stringLeft = _, _, ""
 				local class = RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName].class
+				local r, g, b = RAID_CLASS_COLORS[class].r, RAID_CLASS_COLORS[class].g, RAID_CLASS_COLORS[class].b
 				if RosterItemLevelsDB.options.role and RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName].role then
-					roleIcon = "|T" .. roleIconPaths[RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName].role] .. ":15:15:0:0:64:64:2:56:2:56|t"
+					roleIcon = formatIconForTooltip(roleIcons[RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName].role])
 					stringLeft = roleIcon
 				end
 				if RosterItemLevelsDB.options.spec and RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName].specID then
-					specIcon = "|T" .. specIconPaths[RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName].specID] .. ":15:15:0:0:64:64:2:56:2:56|t"
-					stringLeft = stringLeft .. " " .. specIcon
+					specIcon = formatIconForTooltip(specIcons[RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName].specID])
+					stringLeft = roleIcon == nil and specIcon or stringLeft .. " " .. specIcon
 				end
-				stringLeft = stringLeft .. " " .. unitName
+				stringLeft = (roleIcon == nil and specIcon == nil) and unitName or stringLeft .. " " .. unitName
 				if unitName == RosterItemLevelsPerCharDB.rosterInfo.leaderName then
-					stringLeft = stringLeft .. " |T" .. leaderIconPath .. ":15:15:0:0:64:64:2:56:2:56|t"
+					stringLeft = stringLeft .. " " .. formatIconForTooltip(leaderIcon)
 				end
 				rosterItemLevelsTooltip:AddDoubleLine(
-					stringLeft,
-					RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName].ilvl,
-					RAID_CLASS_COLORS[class].r,
-					RAID_CLASS_COLORS[class].g,
-					RAID_CLASS_COLORS[class].b,
-					RAID_CLASS_COLORS[class].r,
-					RAID_CLASS_COLORS[class].g,
-					RAID_CLASS_COLORS[class].b)
+					stringLeft, RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName].ilvl, r, g, b, r, g, b)
 			end
 		end
 		if #RosterItemLevelsPerCharDB.rosterInfo.sortedRosterTableKeys >= 2 then
@@ -671,7 +677,7 @@ function frame:GROUP_LEFT()
 	self:UnregisterEvent("GROUP_ROSTER_UPDATE")
 	self:UnregisterEvent("PARTY_LEADER_CHANGED")
 	if updater:IsPlaying() then
-		timeGroupLeftOnUpdate = GetTime()
+		timeGroupLeftDuringUpdate = GetTime()
 		toggleOffRosterWindow()
 	end
 	resetRosterInfo()
