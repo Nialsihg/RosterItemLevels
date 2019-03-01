@@ -3,10 +3,11 @@ local addonName = "RosterItemLevels"
 local frame = CreateFrame("Frame")
 frame:RegisterEvent("ADDON_LOADED")
 
+-- Roster window
 local rosterItemLevelsTooltip = CreateFrame("GameTooltip", addonName .. "Frame", UIParent, "GameTooltipTemplate")
 local rosterItemLevelsDropDownFrame = CreateFrame("Frame", addonName .. "DropdownFrame", rosterItemLevelsTooltip, "UIDropDownMenuTemplate")
 
--- Options Panel.
+-- Options panel
 local optionsPanel = CreateFrame("Frame")
 local optionsPanelTitle = optionsPanel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
 local minimapIconCheckButton = CreateFrame("CheckButton", addonName .. "MinimapIcon", optionsPanel, "InterfaceOptionsCheckButtonTemplate")
@@ -37,6 +38,7 @@ local minimapIcon = LibStub("LibDBIcon-1.0")
 -- Used to get the specialization and role of a unit.
 local LibGroupInspect = LibStub("LibGroupInSpecT-1.1")
 
+local timeGroupLeftOnUpdate = 0
 local updateDelay = 5  -- Elapsed time between updates in seconds.
 local ticker, updater, animation, processedChatFrame
 local mouseoverredPlayersTable, mouseoverItemLevelQueries, rosterLeaversTimes = {}, {}, {}
@@ -363,6 +365,9 @@ local function filterMessageSystem(chatFrame, event, msg, ...)
 		return true  -- filter messages sent from mouseovers.
 	end
 	if not updater:IsPlaying() then
+		if GetTime() - timeGroupLeftOnUpdate <= 1 then
+			return true  -- we just left the group but we are still receiving messages from last update, keep filtering.
+		end
 		return false  -- roster window is not open, don't filter.
 	end
 	if rosterLeaversTimes[unitName] then
@@ -373,9 +378,8 @@ local function filterMessageSystem(chatFrame, event, msg, ...)
 	local unitID = unitNameToUnitID(unitName)
 	if not unitID then
 		if IsInRaid() or IsInGroup() then
+			-- Note: user typed .ilvl <unitName> while inside a group and unitName is not in the group.
 			return false  -- unit is not in the group, don't filter.
-		else
-			return true  -- we left the group but we are still receiving messages from last update, keep filtering.
 		end
 	end
 	updateUnitInfo(unitName, unitID, itemLevel)
@@ -383,7 +387,7 @@ local function filterMessageSystem(chatFrame, event, msg, ...)
 end
 
 local function queryUnitItemLevel(unitNameOrID)
-	if UnitIsAFK("player") or UnitIsDeadOrGhost("player") then
+	if UnitIsDeadOrGhost("player") then
 		-- Note: When AFK, sending a message in the EMOTE channel switches your status to Available just for a short period.
 		-- Prevents message system: "You are now Away" / "You are no longer Away" from spamming the chat.
 		-- Prevents error message: "You can't chat when you're dead!" due to the use of the EMOTE channel.
@@ -667,6 +671,7 @@ function frame:GROUP_LEFT()
 	self:UnregisterEvent("GROUP_ROSTER_UPDATE")
 	self:UnregisterEvent("PARTY_LEADER_CHANGED")
 	if updater:IsPlaying() then
+		timeGroupLeftOnUpdate = GetTime()
 		toggleOffRosterWindow()
 	end
 	resetRosterInfo()
