@@ -9,10 +9,15 @@ local rosterItemLevelsDropDownFrame = CreateFrame("Frame", addonName .. "Dropdow
 -- Options Panel.
 local optionsPanel = CreateFrame("Frame")
 local optionsPanelTitle = optionsPanel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
-local autoToggleCheckButton = CreateFrame("CheckButton", addonName .. "AutoToggle", optionsPanel, "InterfaceOptionsCheckButtonTemplate")
 local minimapIconCheckButton = CreateFrame("CheckButton", addonName .. "MinimapIcon", optionsPanel, "InterfaceOptionsCheckButtonTemplate")
-local specIconCheckButton = CreateFrame("CheckButton", addonName .. "ShowSpec", optionsPanel, "InterfaceOptionsCheckButtonTemplate")
+local optionsPanelSubtitleTooltip = optionsPanel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
 local mouseoverCheckButton = CreateFrame("CheckButton", addonName .. "Mouseover", optionsPanel, "InterfaceOptionsCheckButtonTemplate")
+local itemLevelColorDropdown = CreateFrame("Frame", addonName .. "ItemLevelColor", optionsPanel, "UIDropDownMenuTemplate")
+local itemLevelColorDropdownLabel = itemLevelColorDropdown:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+local optionsPanelSubtitleWindow = optionsPanel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+local autoToggleCheckButton = CreateFrame("CheckButton", addonName .. "AutoToggle", optionsPanel, "InterfaceOptionsCheckButtonTemplate")
+local specCheckButton = CreateFrame("CheckButton", addonName .. "ShowSpec", optionsPanel, "InterfaceOptionsCheckButtonTemplate")
+local roleCheckButton = CreateFrame("CheckButton", addonName .. "ShowRole", optionsPanel, "InterfaceOptionsCheckButtonTemplate")
 
 -- Load libs for easy UI creation and autocompletion in EditBox.
 -- Used to create a report window.
@@ -35,6 +40,21 @@ local LibGroupInspect = LibStub("LibGroupInSpecT-1.1")
 local updateDelay = 5  -- Elapsed time between updates in seconds.
 local ticker, updater, animation, processedChatFrame
 local mouseoverredPlayersTable, mouseoverItemLevelQueries, rosterLeaversTimes = {}, {}, {}
+
+local minLowItemLevel, maxLowItemLevel, maxHighItemLevel = 0, 700, 959
+-- Note: We don't merge the tables to keep a better color accuracy.
+local lowItemLevelColors = {
+	[1] = { 157, 157, 157 },  -- from GRAY (Poor quality)
+	[2] = { 255, 255, 255 },  -- to WHITE (Common quality)
+	[3] = { 30, 255, 0 }      -- to GREEN (Uncommon quality)
+}
+local highItemLevelColors = {
+	[1] = {30, 255, 0},    -- from GREEN (Uncommon quality)
+	[2] = {0, 112, 221},   -- to BLUE (Rare quality)
+	[3] = {163, 53, 238},  -- to PURPLE (Epic quality)
+	[4] = {255, 128, 0},   -- to ORANGE (Legendary quality)
+	[5] = {255, 0, 0}      -- to RED
+}
 
 local leaderIconPath = [[Interface\GROUPFRAME\UI-Group-LeaderIcon]]
 local roleIconPaths = {  -- ElvUI's role icon files.
@@ -126,6 +146,44 @@ end
 local function trim(s)  -- from http://lua-users.org/wiki/StringTrim
 	local from = s:match"^%s*()"
 	return from > #s and "" or s:match(".*%S", from)
+end
+
+local function rgbToRgbPercent(r, g, b, alpha)  -- from https://github.com/SpycerLviv/Lua-Color-Converter
+	local red, green, blue = r / 255, g / 255, b / 255
+	red, green, blue = math_floor(red * 100) / 100, math_floor(green * 100) / 100, math_floor(blue * 100) / 100
+	if alpha == nil then
+		return red, green, blue
+	elseif alpha > 1 then
+		alpha = alpha / 100
+	end
+	return red, green, blue, alpha
+end
+
+local function convertToRgb(val, minVal, maxVal, colors)  -- from https://stackoverflow.com/questions/20792445/calculate-rgb-value-for-a-range-of-values-to-create-heat-map/20793850#20793850
+	local i_f = (val - minVal) / (maxVal - minVal) * (#colors - 1)
+	local i, f = math_floor(i_f), i_f - math_floor(i_f)
+	local shift = #colors < i + 2 and 0 or 1  -- Index starts at 1 in Lua
+	local r1, g1, b1 = unpack(colors[i + shift])
+	local r2, g2, b2 = unpack(colors[i + shift + 1])
+	return math_floor(r1 + f * (r2 - r1)), math_floor(g1 + f * (g2 - g1)), math_floor(b1 + f * (b2 - b1))
+end
+
+local function convertItemLevelToRgb(itemLevel)
+	if itemLevel < maxLowItemLevel then
+		return rgbToRgbPercent(convertToRgb(itemLevel, minLowItemLevel, maxLowItemLevel, lowItemLevelColors))
+	end
+	if itemLevel > maxHighItemLevel then
+		return 1, 0, 0
+	end
+	return rgbToRgbPercent(convertToRgb(itemLevel, maxLowItemLevel, maxHighItemLevel + 1, highItemLevelColors))
+end
+
+local function getItemLevelColor(unitName)
+	if RosterItemLevelsDB.options.itemLevelColor == "GearScore" then
+		return convertItemLevelToRgb(mouseoverredPlayersTable[unitName].ilvl)
+	end
+	local class = mouseoverredPlayersTable[unitName].class
+	return RAID_CLASS_COLORS[class].r, RAID_CLASS_COLORS[class].g, RAID_CLASS_COLORS[class].b
 end
 
 local function sortDesc(a, b)
@@ -294,18 +352,11 @@ local function filterMessageSystem(chatFrame, event, msg, ...)
 		unitName, itemLevel = string_match(msg, "Equipped ilvl pentru (%a+): ([0-9]+)")
 	end
 	if mouseoverItemLevelQueries[unitName] then
-		mouseoverredPlayersTable[unitName].ilvl = itemLevel
+		mouseoverredPlayersTable[unitName].ilvl = tonumber(itemLevel)
 		mouseoverredPlayersTable[unitName].lastUpdateTime = GetTime()
 		if unitName == GameTooltip:GetUnit() then  -- mouse is still over the unit we received a message for.
-			local class = mouseoverredPlayersTable[unitName].class
-			GameTooltip:AddDoubleLine("Item Level", 
-				itemLevel,
-				RAID_CLASS_COLORS[class].r,
-				RAID_CLASS_COLORS[class].g,
-				RAID_CLASS_COLORS[class].b,
-				RAID_CLASS_COLORS[class].r,
-				RAID_CLASS_COLORS[class].g,
-				RAID_CLASS_COLORS[class].b)
+			local r, g, b = getItemLevelColor(unitName)
+			GameTooltip:AddDoubleLine("Item Level", mouseoverredPlayersTable[unitName].ilvl, r, g, b, r, g, b)
 			GameTooltip:Show()
 		end
 		mouseoverItemLevelQueries[unitName] = nil
@@ -490,15 +541,13 @@ local function renderRosterItemLevelsTooltip()
 			if RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName] then
 				local roleIcon, specIcon, stringLeft = "", "", ""
 				local class = RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName].class
-				if RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName].role then
+				if RosterItemLevelsDB.options.role and RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName].role then
 					roleIcon = "|T" .. roleIconPaths[RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName].role] .. ":15:15:0:0:64:64:2:56:2:56|t"
 					stringLeft = roleIcon
 				end
-				if RosterItemLevelsDB.options.spec then
-					if RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName].specID then
-						specIcon = "|T" .. specIconPaths[RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName].specID] .. ":15:15:0:0:64:64:2:56:2:56|t"
-						stringLeft = stringLeft .. " " .. specIcon
-					end
+				if RosterItemLevelsDB.options.spec and RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName].specID then
+					specIcon = "|T" .. specIconPaths[RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName].specID] .. ":15:15:0:0:64:64:2:56:2:56|t"
+					stringLeft = stringLeft .. " " .. specIcon
 				end
 				stringLeft = stringLeft .. " " .. unitName
 				if unitName == RosterItemLevelsPerCharDB.rosterInfo.leaderName then
@@ -557,16 +606,8 @@ local function mouseoverTooltipHook()
 		if UnitIsConnected(unitID) then  -- must be connected to use command .ilvl
 			if mouseoverredPlayersTable[unitName] then
 				if mouseoverredPlayersTable[unitName].lastUpdateTime and GetTime() - mouseoverredPlayersTable[unitName].lastUpdateTime < updateDelay then
-					local class = mouseoverredPlayersTable[unitName].class
-					GameTooltip:AddDoubleLine(
-						"Item Level",
-						mouseoverredPlayersTable[unitName].ilvl,
-						RAID_CLASS_COLORS[class].r,
-						RAID_CLASS_COLORS[class].g,
-						RAID_CLASS_COLORS[class].b,
-						RAID_CLASS_COLORS[class].r,
-						RAID_CLASS_COLORS[class].g,
-						RAID_CLASS_COLORS[class].b)
+					local r, g, b = getItemLevelColor(unitName)
+					GameTooltip:AddDoubleLine("Item Level", mouseoverredPlayersTable[unitName].ilvl, r, g, b, r, g, b)
 					GameTooltip:Show()
 				else  -- data is too old, send new ilvl query
 					if not mouseoverItemLevelQueries[unitName] then  -- make sure a query is not already pending.
@@ -587,16 +628,8 @@ local function mouseoverTooltipHook()
 			end
 		else  -- isn't connected, can't refresh his ilvl so look for a cached value.
 			if mouseoverredPlayersTable[unitName] and mouseoverredPlayersTable[unitName].ilvl then
-				local class = mouseoverredPlayersTable[unitName].class
-				GameTooltip:AddDoubleLine(
-					"Item Level",
-					mouseoverredPlayersTable[unitName].ilvl,
-					RAID_CLASS_COLORS[class].r,
-					RAID_CLASS_COLORS[class].g,
-					RAID_CLASS_COLORS[class].b,
-					RAID_CLASS_COLORS[class].r,
-					RAID_CLASS_COLORS[class].g,
-					RAID_CLASS_COLORS[class].b)
+				local r, g, b = getItemLevelColor(unitName)
+				GameTooltip:AddDoubleLine("Item Level", mouseoverredPlayersTable[unitName].ilvl, r, g, b, r, g, b)
 				GameTooltip:Show()
 			end
 		end
@@ -688,20 +721,26 @@ function frame:ADDON_LOADED(name)
 	if type(RosterItemLevelsDB.options) ~= "table" then
 		RosterItemLevelsDB.options = {}
 	end
+	if RosterItemLevelsDB.options.minimap == nil then
+		RosterItemLevelsDB.options.minimap = {}
+	end
+	if RosterItemLevelsDB.options.minimap.hide == nil then
+		RosterItemLevelsDB.options.minimap.hide = false
+	end
+	if RosterItemLevelsDB.options.mouseover == nil then
+		RosterItemLevelsDB.options.mouseover = true
+	end
+	if RosterItemLevelsDB.options.itemLevelColor == nil then
+		RosterItemLevelsDB.options.itemLevelColor = "GearScore"
+	end
 	if RosterItemLevelsDB.options.autoToggle == nil then
 		RosterItemLevelsDB.options.autoToggle = true
 	end
 	if RosterItemLevelsDB.options.spec == nil then
 		RosterItemLevelsDB.options.spec = true
 	end
-	if RosterItemLevelsDB.options.mouseover == nil then
-		RosterItemLevelsDB.options.mouseover = true
-	end
-	if RosterItemLevelsDB.options.minimap == nil then
-		RosterItemLevelsDB.options.minimap = {}
-	end
-	if RosterItemLevelsDB.options.minimap.hide == nil then
-		RosterItemLevelsDB.options.minimap.hide = false
+	if RosterItemLevelsDB.options.role == nil then
+		RosterItemLevelsDB.options.role = true
 	end
 	if type(RosterItemLevelsDB.report) ~= "table" then
 		RosterItemLevelsDB.report = {}
@@ -741,17 +780,23 @@ function frame:ADDON_LOADED(name)
 		minimapIconCheckButton:SetChecked(checked)
 		RosterItemLevelsDB.options.minimap.hide = not checked
 
+		checked = mouseoverCheckButton:GetChecked()
+		mouseoverCheckButton:SetChecked(checked)
+		RosterItemLevelsDB.options.mouseover = checked
+		
+		RosterItemLevelsDB.options.itemLevelColor = itemLevelColorDropdown.selectedValue
+
 		checked = autoToggleCheckButton:GetChecked()
 		autoToggleCheckButton:SetChecked(checked)
 		RosterItemLevelsDB.options.autoToggle = checked
 
-		checked = specIconCheckButton:GetChecked()
-		specIconCheckButton:SetChecked(checked)
+		checked = specCheckButton:GetChecked()
+		specCheckButton:SetChecked(checked)
 		RosterItemLevelsDB.options.spec = checked
 
-		checked = mouseoverCheckButton:GetChecked()
-		mouseoverCheckButton:SetChecked(checked)
-		RosterItemLevelsDB.options.mouseover = checked
+		checked = roleCheckButton:GetChecked()
+		roleCheckButton:SetChecked(checked)
+		RosterItemLevelsDB.options.role = checked
 	end
 	optionsPanel.cancel = function(self)
 		-- Revert changes if any, and set icon to the corresponding state.
@@ -762,11 +807,13 @@ function frame:ADDON_LOADED(name)
 			minimapIcon:Show(addonName .. "LDB")
 		end
 
-		autoToggleCheckButton:SetChecked(RosterItemLevelsDB.options.autoToggle)
-
-		specIconCheckButton:SetChecked(RosterItemLevelsDB.options.spec)
-
 		mouseoverCheckButton:SetChecked(RosterItemLevelsDB.options.mouseover)
+		itemLevelColorDropdown.selectedValue = RosterItemLevelsDB.options.itemLevelColor
+		RosterItemLevelsItemLevelColorText:SetText(RosterItemLevelsDB.options.itemLevelColor)
+
+		autoToggleCheckButton:SetChecked(RosterItemLevelsDB.options.autoToggle)
+		specCheckButton:SetChecked(RosterItemLevelsDB.options.spec)
+		roleCheckButton:SetChecked(RosterItemLevelsDB.options.role)
 	end
 
 	optionsPanelTitle:SetPoint("TOPLEFT", 16, -16)
@@ -779,12 +826,8 @@ function frame:ADDON_LOADED(name)
 		checkButton.tooltipRequirement = description
 	end
 
-	setCheckButtonProperties(autoToggleCheckButton, "Auto toggle", "Automatically toggles the roster window when joining a group.")
-	autoToggleCheckButton:SetPoint("TOPLEFT", optionsPanelTitle, "BOTTOMLEFT", -2, -16)
-	autoToggleCheckButton:SetChecked(RosterItemLevelsDB.options.autoToggle)
-
 	setCheckButtonProperties(minimapIconCheckButton, "Minimap icon", "Shows " .. addonName .. " icon around your minimap.")
-	minimapIconCheckButton:SetPoint("TOPLEFT", autoToggleCheckButton, "BOTTOMLEFT", 0, -8)
+	minimapIconCheckButton:SetPoint("TOPLEFT", optionsPanel, "TOPLEFT", 24, -44)
 	minimapIconCheckButton:SetChecked(not RosterItemLevelsDB.options.minimap.hide)
 	minimapIconCheckButton:SetScript("OnClick", function(self)
 		if not minimapIconCheckButton:GetChecked() then
@@ -794,15 +837,55 @@ function frame:ADDON_LOADED(name)
 		end
 	end)
 
-	setCheckButtonProperties(specIconCheckButton, "Specializations", "Shows specializations of group members in the roster window.")
-	specIconCheckButton:SetPoint("TOPLEFT", minimapIconCheckButton, "BOTTOMLEFT", 2, -8)
-	specIconCheckButton:SetChecked(RosterItemLevelsDB.options.spec)
+	optionsPanelSubtitleTooltip:SetPoint("TOPLEFT", minimapIconCheckButton, "BOTTOMLEFT", 0, -16)
+	optionsPanelSubtitleTooltip:SetText("Tooltip")
 
-	setCheckButtonProperties(mouseoverCheckButton, "Mouseover", "Adds the item level in the gametooltip when you mouseover a player.")
-	mouseoverCheckButton:SetPoint("TOPLEFT", specIconCheckButton, "BOTTOMLEFT", 2, -8)
+	setCheckButtonProperties(mouseoverCheckButton, "Mouseover", "Adds the item level in the tooltip when you mouseover a player.")
+	mouseoverCheckButton:SetPoint("TOPLEFT", optionsPanelSubtitleTooltip, "BOTTOMLEFT", 8, -8)
 	mouseoverCheckButton:SetChecked(RosterItemLevelsDB.options.mouseover)
 	
-	-- RosterItemLevels window config
+	itemLevelColorDropdown:SetPoint("TOPRIGHT", mouseoverCheckButton, "BOTTOMRIGHT", 0, -16)
+	RosterItemLevelsItemLevelColorText:SetText(RosterItemLevelsDB.options.itemLevelColor)
+	itemLevelColorDropdown.selectedValue = RosterItemLevelsDB.options.itemLevelColor
+	itemLevelColorDropdown.initialize = function(self)
+		local info
+		info = UIDropDownMenu_CreateInfo()
+		info.text = "Class"
+		info.value = "Class"
+		info.func = function(self)
+			itemLevelColorDropdown.selectedValue = self.value
+			RosterItemLevelsItemLevelColorText:SetText(self.value)
+		end
+		UIDropDownMenu_AddButton(info)
+
+		info = UIDropDownMenu_CreateInfo()
+		info.text = "GearScore"
+		info.value = "GearScore"
+		info.func = function(self)
+			itemLevelColorDropdown.selectedValue = self.value
+			RosterItemLevelsItemLevelColorText:SetText(self.value)
+		end
+		UIDropDownMenu_AddButton(info)
+	end
+	itemLevelColorDropdownLabel:SetPoint("BOTTOMLEFT", itemLevelColorDropdown, "TOPLEFT", 16, 3)
+	itemLevelColorDropdownLabel:SetText("Item Level Color")
+
+	optionsPanelSubtitleWindow:SetPoint("TOPLEFT", optionsPanel, "TOPLEFT", 24, -200)
+	optionsPanelSubtitleWindow:SetText("Roster Window")
+
+	setCheckButtonProperties(autoToggleCheckButton, "Auto toggle", "Automatically toggles the roster window when joining a group.")
+	autoToggleCheckButton:SetPoint("TOPLEFT", optionsPanelSubtitleWindow, "BOTTOMLEFT", 8, -8)
+	autoToggleCheckButton:SetChecked(RosterItemLevelsDB.options.autoToggle)
+
+	setCheckButtonProperties(specCheckButton, "Specialization", "Shows specialization of group members in the roster window.")
+	specCheckButton:SetPoint("TOPLEFT", autoToggleCheckButton, "BOTTOMLEFT", 0, -8)
+	specCheckButton:SetChecked(RosterItemLevelsDB.options.spec)
+
+	setCheckButtonProperties(roleCheckButton, "Role", "Shows role of group members in the roster window.")
+	roleCheckButton:SetPoint("TOPLEFT", specCheckButton, "BOTTOMLEFT", 0, -8)
+	roleCheckButton:SetChecked(RosterItemLevelsDB.options.role)
+	
+	-- Roster window config
 	local frameBackdrop = {
 		bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
 		tile = true,
@@ -847,7 +930,7 @@ function frame:ADDON_LOADED(name)
 						UIDropDownMenu_AddButton(info, 1)
 
 						info = UIDropDownMenu_CreateInfo()
-						info.text = LOCK_FRAME
+						info.text = "Lock"
 						if RosterItemLevelsDB.window.locked then
 							info.checked = true
 						end
@@ -881,9 +964,9 @@ function rosterItemLevelsLDB:OnEnter()
 	GameTooltip:SetPoint("TOPLEFT", self, "BOTTOMLEFT")
 	GameTooltip:ClearLines()
 	GameTooltip:SetText(addonName)
-	GameTooltip:AddLine("|cffeda55fClick|r to toggle roster window.", 0, 1, 0)
-	GameTooltip:AddLine("|cffeda55fShift-Click|r to report roster item levels.", 0, 1, 0)
-	GameTooltip:AddLine("|cffeda55fRight-Click|r to open options panel.", 0, 1, 0)
+	GameTooltip:AddLine("|cffeda55fClick|r to toggle the roster window.", 0, 1, 0)
+	GameTooltip:AddLine("|cffeda55fShift-Click|r to toggle the report window.", 0, 1, 0)
+	GameTooltip:AddLine("|cffeda55fRight-Click|r to open the options panel.", 0, 1, 0)
 	GameTooltip:Show()
 end
 
@@ -903,11 +986,15 @@ function rosterItemLevelsLDB:OnClick(button)
 end
 
 function SlashCmdList.ROSTERITEMLEVELS(msg, editbox)
+	local arg = string.split(" ", msg)
 	if not IsInRaid() and not IsInGroup() then
+		if arg == "report" then
+			print("You must be in a group to toggle the report window.")
+			return
+		end
 		print("You must be in a group to toggle the roster window.")
 		return
 	end
-	local arg = string.split(" ", msg)
 	if arg == "report" then  -- /ilvls report
 		if updater:IsPlaying() then
 			openReportWindow()
