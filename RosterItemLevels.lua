@@ -5,7 +5,7 @@ frame:RegisterEvent("ADDON_LOADED")
 
 -- Roster window
 local rosterItemLevelsTooltip = CreateFrame("GameTooltip", addonName .. "Frame", UIParent, "GameTooltipTemplate")
-local rosterItemLevelsDropDownFrame = CreateFrame("Frame", addonName .. "DropdownFrame", rosterItemLevelsTooltip, "UIDropDownMenuTemplate")
+local rosterItemLevelsDropDown = CreateFrame("Frame", addonName .. "Dropdown", rosterItemLevelsTooltip, "UIDropDownMenuTemplate")
 
 -- Options panel
 local optionsPanel = CreateFrame("Frame")
@@ -13,7 +13,7 @@ local optionsPanelTitle = optionsPanel:CreateFontString(nil, "ARTWORK", "GameFon
 local minimapIconCheckButton = CreateFrame("CheckButton", addonName .. "MinimapIcon", optionsPanel, "InterfaceOptionsCheckButtonTemplate")
 local optionsPanelSubtitleTooltip = optionsPanel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
 local mouseoverCheckButton = CreateFrame("CheckButton", addonName .. "Mouseover", optionsPanel, "InterfaceOptionsCheckButtonTemplate")
-local itemLevelColorDropdown = CreateFrame("Frame", addonName .. "ItemLevelColor", optionsPanel, "UIDropDownMenuTemplate")
+local itemLevelColorDropdown = CreateFrame("Frame", addonName .. "TooltipColor", optionsPanel, "UIDropDownMenuTemplate")
 local itemLevelColorDropdownLabel = itemLevelColorDropdown:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
 local optionsPanelSubtitleWindow = optionsPanel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
 local autoToggleCheckButton = CreateFrame("CheckButton", addonName .. "AutoToggle", optionsPanel, "InterfaceOptionsCheckButtonTemplate")
@@ -46,9 +46,9 @@ local mouseoverredPlayersTable, mouseoverItemLevelQueries, rosterLeaversTimes = 
 local minLowItemLevel, maxLowItemLevel, maxHighItemLevel = 0, 700, 959
 -- Note: We don't merge the tables to keep a better color accuracy.
 local lowItemLevelColors = {
-	[1] = { 157, 157, 157 },  -- from GRAY (Poor quality)
-	[2] = { 255, 255, 255 },  -- to WHITE (Common quality)
-	[3] = { 30, 255, 0 }      -- to GREEN (Uncommon quality)
+	[1] = {157, 157, 157},  -- from GRAY (Poor quality)
+	[2] = {255, 255, 255},  -- to WHITE (Common quality)
+	[3] = {30, 255, 0}      -- to GREEN (Uncommon quality)
 }
 local highItemLevelColors = {
 	[1] = {30, 255, 0},    -- from GREEN (Uncommon quality)
@@ -168,7 +168,7 @@ end
 local function convertToRgb(val, minVal, maxVal, colors)  -- from https://stackoverflow.com/questions/20792445/calculate-rgb-value-for-a-range-of-values-to-create-heat-map/20793850#20793850
 	local i_f = (val - minVal) / (maxVal - minVal) * (#colors - 1)
 	local i, f = math_floor(i_f), i_f - math_floor(i_f)
-	local shift = #colors < i + 2 and 0 or 1  -- Index starts at 1 in Lua
+	local shift = #colors < i + 2 and 0 or 1  -- the indices start at 1 in Lua.
 	local r1, g1, b1 = unpack(colors[i + shift])
 	local r2, g2, b2 = unpack(colors[i + shift + 1])
 	return math_floor(r1 + f * (r2 - r1)), math_floor(g1 + f * (g2 - g1)), math_floor(b1 + f * (b2 - b1))
@@ -194,9 +194,9 @@ end
 
 local function isValidCharacterName(unitName)
 	-- Character name must be between 2-12 characters long and must contain only letters [a-z-A-Z].
-	if unitName then
+	if unitName and unitName ~= UNKNOWNOBJECT then
 		if #unitName >= 2 and #unitName <= 12 then
-			if nil == string_match(unitName, "[^%a]") then
+			if string_match(unitName, "[^%a]") == nil then
 				return true
 			end
 		end
@@ -283,13 +283,21 @@ local function retrieveGroupLeader()
 	if IsInRaid() then
 		for i = 1, GetNumGroupMembers() do
 			if UnitIsGroupLeader("raid" .. i) then
-				return UnitName("raid" .. i)
+				local unitName = UnitName("raid" .. i)
+				if isValidCharacterName(unitName) then
+					return unitName
+				end
+				break
 			end
 		end
 	elseif IsInGroup() then
 		for i = 1, GetNumSubgroupMembers() do
 			if UnitIsGroupLeader("party" .. i) then
-				return UnitName("party" .. i)
+				local unitName = UnitName("party" .. i)
+				if isValidCharacterName(unitName) then
+					return unitName
+				end
+				break
 			end
 		end
 	end
@@ -389,8 +397,8 @@ local function filterMessageSystem(chatFrame, event, msg, ...)
 	local unitID = unitNameToUnitID(unitName)
 	if not unitID then
 		if IsInRaid() or IsInGroup() then
-			-- Note: user typed .ilvl <unitName> while inside a group and unitName is not in the group.
-			return false  -- unit is not in the group, don't filter.
+			-- Don't filter user requests for people outside the group.
+			return false
 		end
 	end
 	updateUnitInfo(unitName, unitID, itemLevel)
@@ -469,7 +477,7 @@ local function openReportWindow()
 	channelDropDown:SetCallback("OnValueChanged", function(f, e, value)
 		RosterItemLevelsDB.report.channel = value  -- Redraw in-place to add/remove whisper editbox.
 		if channel ~= value then
-			local pos = { reportWindow:GetPoint() }
+			local pos = {reportWindow:GetPoint()}
 			closeReportWindow() 
 			openReportWindow()
 			reportWindow:SetPoint(unpack(pos))
@@ -568,9 +576,7 @@ local function renderRosterItemLevelsTooltip()
 					stringLeft = roleIcon == nil and specIcon or stringLeft .. " " .. specIcon
 				end
 				stringLeft = (roleIcon == nil and specIcon == nil) and unitName or stringLeft .. " " .. unitName
-
-				if RosterItemLevelsPerCharDB.rosterInfo.leaderName == nil or
-						RosterItemLevelsPerCharDB.rosterInfo.leaderName == UNKNOWNOBJECT then
+				if RosterItemLevelsPerCharDB.rosterInfo.leaderName == nil then
 					RosterItemLevelsPerCharDB.rosterInfo.leaderName = retrieveGroupLeader()
 				end
 				if unitName == RosterItemLevelsPerCharDB.rosterInfo.leaderName then
@@ -826,7 +832,7 @@ function frame:ADDON_LOADED(name)
 
 		mouseoverCheckButton:SetChecked(RosterItemLevelsDB.options.mouseover)
 		itemLevelColorDropdown.selectedValue = RosterItemLevelsDB.options.itemLevelColor
-		RosterItemLevelsItemLevelColorText:SetText(RosterItemLevelsDB.options.itemLevelColor)
+		RosterItemLevelsTooltipColorText:SetText(RosterItemLevelsDB.options.itemLevelColor)
 
 		autoToggleCheckButton:SetChecked(RosterItemLevelsDB.options.autoToggle)
 		specCheckButton:SetChecked(RosterItemLevelsDB.options.spec)
@@ -862,8 +868,8 @@ function frame:ADDON_LOADED(name)
 	mouseoverCheckButton:SetChecked(RosterItemLevelsDB.options.mouseover)
 	
 	itemLevelColorDropdown:SetPoint("TOPRIGHT", mouseoverCheckButton, "BOTTOMRIGHT", 0, -16)
-	RosterItemLevelsItemLevelColorText:SetText(RosterItemLevelsDB.options.itemLevelColor)
 	itemLevelColorDropdown.selectedValue = RosterItemLevelsDB.options.itemLevelColor
+	RosterItemLevelsTooltipColorText:SetText(RosterItemLevelsDB.options.itemLevelColor)
 	itemLevelColorDropdown.initialize = function(self)
 		local info
 		info = UIDropDownMenu_CreateInfo()
@@ -871,7 +877,7 @@ function frame:ADDON_LOADED(name)
 		info.value = "Class"
 		info.func = function(self)
 			itemLevelColorDropdown.selectedValue = self.value
-			RosterItemLevelsItemLevelColorText:SetText(self.value)
+			RosterItemLevelsTooltipColorText:SetText(self.value)
 		end
 		UIDropDownMenu_AddButton(info)
 
@@ -880,7 +886,7 @@ function frame:ADDON_LOADED(name)
 		info.value = "GearScore"
 		info.func = function(self)
 			itemLevelColorDropdown.selectedValue = self.value
-			RosterItemLevelsItemLevelColorText:SetText(self.value)
+			RosterItemLevelsTooltipColorText:SetText(self.value)
 		end
 		UIDropDownMenu_AddButton(info)
 	end
@@ -907,7 +913,7 @@ function frame:ADDON_LOADED(name)
 		bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
 		tile = true,
 		tileSize = 16,
-		insets = { left = 2, right = 14, top = 2, bottom = 2 }
+		insets = {left = 2, right = 14, top = 2, bottom = 2}
 	}
 	rosterItemLevelsTooltip:SetFrameStrata("LOW")
 	rosterItemLevelsTooltip:SetBackdrop(frameBackdrop)
@@ -933,10 +939,10 @@ function frame:ADDON_LOADED(name)
 	end)
 	rosterItemLevelsTooltip:SetScript("OnMouseDown", function(self, button)
 		if button == "RightButton" then
-			if _G["DropDownList1"]:IsShown() and UIDROPDOWNMENU_OPEN_MENU == rosterItemLevelsDropDownFrame then
+			if _G["DropDownList1"]:IsShown() and UIDROPDOWNMENU_OPEN_MENU == rosterItemLevelsDropDown then
 				CloseDropDownMenus()
 			else
-				UIDropDownMenu_Initialize(rosterItemLevelsDropDownFrame, function(dropdownFrame, level, menuList)
+				UIDropDownMenu_Initialize(rosterItemLevelsDropDown, function(dropdownFrame, level, menuList)
 					local info
 					if level == 1 then
 						info = UIDropDownMenu_CreateInfo()
@@ -955,7 +961,7 @@ function frame:ADDON_LOADED(name)
 						UIDropDownMenu_AddButton(info, 1)
 					end
 				end)
-				ToggleDropDownMenu(1, nil, rosterItemLevelsDropDownFrame, "cursor", 5, -10)
+				ToggleDropDownMenu(1, nil, rosterItemLevelsDropDown, "cursor", 5, -10)
 			end
 		end
 	end)
