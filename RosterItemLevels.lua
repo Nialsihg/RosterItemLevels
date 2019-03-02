@@ -214,7 +214,8 @@ local function sortRosterTableKeys(sortFunction)
 		table_insert(keys, unitName)
 	end
 	table_sort(keys, function(unitName1, unitName2)  -- Will exec only if table contains 2 or more elements.
-		return sortFunction(RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName1].ilvl, RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName2].ilvl)
+		return sortFunction(RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName1].ilvl,
+				RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName2].ilvl)
 	end)
 	return keys
 end
@@ -235,8 +236,8 @@ end
 local function resetRosterInfo()
 	wipe(RosterItemLevelsPerCharDB.rosterInfo.rosterTable)
 	wipe(RosterItemLevelsPerCharDB.rosterInfo.sortedRosterTableKeys)
-	RosterItemLevelsPerCharDB.rosterInfo.leaderName = ""
-	RosterItemLevelsPerCharDB.rosterInfo.avgRosterItemLevel = 0
+	RosterItemLevelsPerCharDB.rosterInfo.leaderName = nil
+	RosterItemLevelsPerCharDB.rosterInfo.avgRosterItemLevel = nil
 end
 
 local function cleanRosterTable()
@@ -275,23 +276,20 @@ local function cleanRosterTable()
 	return #removedFromRoster
 end
 
-local function updateGroupLeader()
+local function retrieveGroupLeader()
 	if UnitIsGroupLeader("player") then
-		RosterItemLevelsPerCharDB.rosterInfo.leaderName = UnitName("player")
-		return
+		return UnitName("player")
 	end
 	if IsInRaid() then
 		for i = 1, GetNumGroupMembers() do
 			if UnitIsGroupLeader("raid" .. i) then
-				RosterItemLevelsPerCharDB.rosterInfo.leaderName = UnitName("raid" .. i)
-				return
+				return UnitName("raid" .. i)
 			end
 		end
 	elseif IsInGroup() then
 		for i = 1, GetNumSubgroupMembers() do
 			if UnitIsGroupLeader("party" .. i) then
-				RosterItemLevelsPerCharDB.rosterInfo.leaderName = UnitName("party" .. i)
-				return
+				return UnitName("party" .. i)
 			end
 		end
 	end
@@ -299,7 +297,8 @@ end
 
 local function unitNameToUnitID(unitName)
 	-- Look in cache first.
-	if RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName] and RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName].lastKnownUnitID then
+	if RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName] and
+			RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName].lastKnownUnitID then
 		local lastKnownUnitID = RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName].lastKnownUnitID
 		if unitName == UnitName(lastKnownUnitID) then
 			return lastKnownUnitID
@@ -407,6 +406,8 @@ local function queryUnitItemLevel(unitNameOrID)
 	end
 	local unitName = UnitName(unitNameOrID) or unitNameOrID
 	if isValidCharacterName(unitName) then
+		-- Note: unitName fits the criterias for a character name
+		-- but .ilvl can still return "Invalid character" if unitName doesn't exist in the server's DB.
 		SendChatMessage(".ilvl " .. unitName, "EMOTE")  -- Will call filterMessageSystem() on server response.
 	end
 end
@@ -567,6 +568,11 @@ local function renderRosterItemLevelsTooltip()
 					stringLeft = roleIcon == nil and specIcon or stringLeft .. " " .. specIcon
 				end
 				stringLeft = (roleIcon == nil and specIcon == nil) and unitName or stringLeft .. " " .. unitName
+
+				if RosterItemLevelsPerCharDB.rosterInfo.leaderName == nil or
+						RosterItemLevelsPerCharDB.rosterInfo.leaderName == UNKNOWNOBJECT then
+					RosterItemLevelsPerCharDB.rosterInfo.leaderName = retrieveGroupLeader()
+				end
 				if unitName == RosterItemLevelsPerCharDB.rosterInfo.leaderName then
 					stringLeft = stringLeft .. " " .. formatIconForTooltip(leaderIcon)
 				end
@@ -575,7 +581,7 @@ local function renderRosterItemLevelsTooltip()
 			end
 		end
 		if #RosterItemLevelsPerCharDB.rosterInfo.sortedRosterTableKeys >= 2 then
-			rosterItemLevelsTooltip:AddLine(" ", 1, 1, 1)
+			GameTooltip_AddBlankLinesToTooltip(rosterItemLevelsTooltip, 1)
 			rosterItemLevelsTooltip:AddDoubleLine(
 				"Average (" .. #RosterItemLevelsPerCharDB.rosterInfo.sortedRosterTableKeys .. ")",
 				RosterItemLevelsPerCharDB.rosterInfo.avgRosterItemLevel, 1, 1, 1, 1, 1, 1)
@@ -658,7 +664,7 @@ function frame:PLAYER_LEAVING_WORLD()
 end
 
 function frame:PARTY_LEADER_CHANGED()
-	updateGroupLeader()
+	RosterItemLevelsPerCharDB.rosterInfo.leaderName = retrieveGroupLeader()
 end
 
 function frame:GROUP_ROSTER_UPDATE()  -- A player joined or left the group.
@@ -701,7 +707,7 @@ function frame:PLAYER_LOGIN()  -- Registers on login / reload.
 		self:RegisterEvent("GROUP_ROSTER_UPDATE")
 		self:RegisterEvent("PARTY_LEADER_CHANGED")
 		LibGroupInspect:Rescan()
-		updateGroupLeader()
+		RosterItemLevelsPerCharDB.rosterInfo.leaderName = retrieveGroupLeader()
 		if RosterItemLevelsPerCharDB.window.wasShown then
 			toggleOnRosterWindowAfterDelay(0.5)
 		end
