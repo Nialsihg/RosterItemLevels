@@ -111,14 +111,16 @@ local specIcons = {
 
     [71] = [[Interface\Icons\ability_warrior_savageblow]],          -- Warrior Arms
     [72] = [[Interface\Icons\ability_warrior_innerrage]],           -- Warrior Fury
-    [73] = [[Interface\Icons\ability_warrior_defensivestance]],     -- Warrior Protection
+    [73] = [[Interface\Icons\ability_warrior_defensivestance]]      -- Warrior Protection
 }
 
 -- Cache frequently used globals in locals.
 local GetTime = GetTime
+local GetCVar = GetCVar
 local UnitName = UnitName
 local UnitGUID = UnitGUID
 local UnitClass = UnitClass
+local UnitIsAFK = UnitIsAFK
 local UnitExists = UnitExists
 local UnitIsPlayer = UnitIsPlayer
 local UnitIsConnected = UnitIsConnected
@@ -190,6 +192,19 @@ local function getItemLevelColor(unitName)
     end
     local class = mouseoverredPlayersTable[unitName].class
     return RAID_CLASS_COLORS[class].r, RAID_CLASS_COLORS[class].g, RAID_CLASS_COLORS[class].b
+end
+
+local function autoCancelAwayMode()
+    if UnitIsAFK("player") and GetCVar("autoClearAFK") == "1" then
+        SendChatMessage(".save", "EMOTE")
+    end
+end
+
+local function playerCanUseCommand()
+    if UnitIsDeadOrGhost("player") or (UnitIsAFK("player") and GetCVar("autoClearAFK") == "1") then
+        return false
+    end
+    return true
 end
 
 local function isValidCharacterName(unitName)
@@ -406,12 +421,6 @@ local function filterMessageSystem(chatFrame, event, msg, ...)
 end
 
 local function queryUnitItemLevel(unitNameOrID)
-    if UnitIsAFK("player") or UnitIsDeadOrGhost("player") then
-        -- Note: When AFK, sending a message in the EMOTE channel switches your status to Available just for a short period.
-        -- Prevents message system: "You are now Away" / "You are no longer Away" from spamming the chat.
-        -- Prevents error message: "You can't chat when you're dead!" due to the use of the EMOTE channel.
-        return
-    end
     local unitName = UnitName(unitNameOrID) or unitNameOrID
     if isValidCharacterName(unitName) then
         -- Note: unitName fits the criterias for a character name
@@ -421,6 +430,9 @@ local function queryUnitItemLevel(unitNameOrID)
 end
 
 local function queryRosterItemLevels()
+    if not playerCanUseCommand() then
+        return
+    end
     if IsInRaid() then
         for i = 1, GetNumGroupMembers() do
             queryUnitItemLevel("raid" .. i)
@@ -612,6 +624,7 @@ local function toggleOnRosterWindow()
 end
 
 local function toggleOnRosterWindowAfterDelay(delay)
+    autoCancelAwayMode()
     C_Timer.After(delay, function()
         if not updater:IsPlaying() then
             toggleOnRosterWindow()
@@ -620,11 +633,11 @@ local function toggleOnRosterWindowAfterDelay(delay)
 end
 
 local function mouseoverTooltipHook()
-    if not RosterItemLevelsDB.options.mouseover then
+    if not RosterItemLevelsDB.options.mouseover or not playerCanUseCommand() then
         return
     end
     local unitName, unitID = GameTooltip:GetUnit()
-    if UnitExists(unitID) and UnitIsPlayer(unitID) then  -- Note: true when unitID isn't connected and inside our group.
+    if UnitExists(unitID) and UnitIsPlayer(unitID) then  -- also true when unitID isn't connected but is in our group.
         if UnitIsConnected(unitID) then  -- must be connected to use command .ilvl
             if mouseoverredPlayersTable[unitName] then
                 if mouseoverredPlayersTable[unitName].lastUpdateTime and GetTime() - mouseoverredPlayersTable[unitName].lastUpdateTime < updateDelay then
@@ -648,7 +661,7 @@ local function mouseoverTooltipHook()
                     queryUnitItemLevel(unitName)
                 end
             end
-        else  -- isn't connected, can't refresh his ilvl so look for a cached value.
+        else  -- unit isn't connected, can't refresh his ilvl so look for a cached value.
             if mouseoverredPlayersTable[unitName] and mouseoverredPlayersTable[unitName].ilvl then
                 local r, g, b = getItemLevelColor(unitName)
                 GameTooltip:AddDoubleLine("Item Level", mouseoverredPlayersTable[unitName].ilvl, r, g, b, r, g, b)
@@ -1028,7 +1041,7 @@ function SlashCmdList.ROSTERITEMLEVELS(msg, editbox)
         if updater:IsPlaying() then
             toggleOffRosterWindow()
         else
-            toggleOnRosterWindow()
+            toggleOnRosterWindowAfterDelay(0.5)
         end
     else
         print("Help")
