@@ -4,7 +4,7 @@ local frame = CreateFrame("Frame")
 frame:RegisterEvent("ADDON_LOADED")
 
 -- Roster window
-local rosterItemLevelsTooltip = CreateFrame("GameTooltip", addonName .. "Frame", UIParent, "GameTooltipTemplate")
+local rosterItemLevelsTooltip = CreateFrame("GameTooltip", addonName .. "Tooltip", UIParent, "GameTooltipTemplate")
 local rosterItemLevelsDropDown = CreateFrame("Frame", addonName .. "Dropdown", rosterItemLevelsTooltip, "UIDropDownMenuTemplate")
 
 -- Options panel
@@ -38,10 +38,10 @@ local minimapIcon = LibStub("LibDBIcon-1.0")
 -- Used to get the specialization and role of a unit.
 local LibGroupInspect = LibStub("LibGroupInSpecT-1.1")
 
-local timeGroupLeftDuringUpdate = 0
+local timeToggleOffWindow = 0
 local updateDelay = 5  -- Elapsed time between updates in seconds.
 local ticker, updater, animation, processedChatFrame
-local mouseoverredPlayersTable, mouseoverItemLevelQueries, rosterLeaversTimes = {}, {}, {}
+local mouseoverPlayersTable, mouseoverPendingQueries, rosterLeaversTimes = {}, {}, {}
 
 local minLowItemLevel, maxLowItemLevel, maxHighItemLevel = 0, 700, 959
 -- Note: We don't merge the tables to keep a better color accuracy.
@@ -188,23 +188,10 @@ end
 
 local function getItemLevelColor(unitName)
     if RosterItemLevelsDB.options.itemLevelColor == "GearScore" then
-        return convertItemLevelToRgb(mouseoverredPlayersTable[unitName].ilvl)
+        return convertItemLevelToRgb(mouseoverPlayersTable[unitName].ilvl)
     end
-    local class = mouseoverredPlayersTable[unitName].class
+    local class = mouseoverPlayersTable[unitName].class
     return RAID_CLASS_COLORS[class].r, RAID_CLASS_COLORS[class].g, RAID_CLASS_COLORS[class].b
-end
-
-local function autoCancelAwayMode()
-    if UnitIsAFK("player") and GetCVar("autoClearAFK") == "1" then
-        SendChatMessage(".save", "EMOTE")
-    end
-end
-
-local function playerCanUseCommand()
-    if UnitIsDeadOrGhost("player") or (UnitIsAFK("player") and GetCVar("autoClearAFK") == "1") then
-        return false
-    end
-    return true
 end
 
 local function isValidCharacterName(unitName)
@@ -248,13 +235,6 @@ local function updateRosterTableDependencies()
     RosterItemLevelsPerCharDB.rosterInfo.avgRosterItemLevel = computeAverageRosterItemLevel()
 end
 
-local function resetRosterInfo()
-    wipe(RosterItemLevelsPerCharDB.rosterInfo.rosterTable)
-    wipe(RosterItemLevelsPerCharDB.rosterInfo.sortedRosterTableKeys)
-    RosterItemLevelsPerCharDB.rosterInfo.leaderName = nil
-    RosterItemLevelsPerCharDB.rosterInfo.avgRosterItemLevel = nil
-end
-
 local function cleanRosterTable()
     local removedFromRoster = {}
     for savedName in pairs(RosterItemLevelsPerCharDB.rosterInfo.rosterTable) do
@@ -289,6 +269,11 @@ local function cleanRosterTable()
     end
     updateRosterTableDependencies()
     return #removedFromRoster
+end
+
+local function resetRosterInfo()
+    cleanRosterTable()
+    RosterItemLevelsPerCharDB.rosterInfo.leaderName = nil
 end
 
 local function retrieveGroupLeader()
@@ -342,8 +327,7 @@ local function unitNameToUnitID(unitName)
                 return "party" .. i
             end
         end
-    end
-    -- no return if unitName is not in our group.
+    end  -- Returns nil if unitName is not in our group.
 end
 
 local function updateUnitInfo(unitName, unitID, itemLevel)
@@ -354,7 +338,7 @@ local function updateUnitInfo(unitName, unitID, itemLevel)
         local _, class = UnitClass(unitID)
         RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName].class = class
     end
-    local unitInfo = LibGroupInspect:GetCachedInfo(UnitGUID(unitID))  -- Most likely nil if we just relogged/reloaded
+    local unitInfo = LibGroupInspect:GetCachedInfo(UnitGUID(unitID))  -- Most likely nil if we just relogged/reloaded.
     if unitInfo and unitInfo.global_spec_id and unitInfo.global_spec_id ~= 0 then
         RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName].specID = unitInfo.global_spec_id
     end
@@ -375,38 +359,39 @@ end
 
 local function filterMessageSystem(chatFrame, event, msg, ...)
     if not string_find(msg, "Equipped ilvl for") and not string_find(msg, "Equipped ilvl pentru") then
-        return false  -- not the message we are looking for, don't filter.
+        return false  -- Not the message we are looking for, don't filter.
     end
     if not processedChatFrame then
-        processedChatFrame = chatFrame  -- saves the chatFrame that we want to process data from.
+        processedChatFrame = chatFrame  -- Saves the chatFrame that we want to process data from.
     end
     if chatFrame ~= processedChatFrame then
-        return true  -- filter the message from all chatFrames but only process data from processedChatFrame.
+        return true  -- Filter the message from all chatFrames but only process data from processedChatFrame.
     end
     local unitName, itemLevel = string_match(msg, "Equipped ilvl for (%a+): ([0-9]+)")
-    if not unitName then  -- server response is in Romanian.
+    if not unitName then  -- Server response is in Romanian.
         unitName, itemLevel = string_match(msg, "Equipped ilvl pentru (%a+): ([0-9]+)")
     end
-    if mouseoverItemLevelQueries[unitName] then
-        mouseoverredPlayersTable[unitName].ilvl = tonumber(itemLevel)
-        mouseoverredPlayersTable[unitName].lastUpdateTime = GetTime()
-        if unitName == GameTooltip:GetUnit() then  -- mouse is still over the unit we received a message for.
+    if mouseoverPendingQueries[unitName] then
+        mouseoverPlayersTable[unitName].ilvl = tonumber(itemLevel)
+        mouseoverPlayersTable[unitName].lastUpdateTime = GetTime()
+        if unitName == GameTooltip:GetUnit() then  -- Mouse is still over the unit we received a message for.
             local r, g, b = getItemLevelColor(unitName)
-            GameTooltip:AddDoubleLine("Item Level", mouseoverredPlayersTable[unitName].ilvl, r, g, b, r, g, b)
+            GameTooltip:AddDoubleLine("Item Level", mouseoverPlayersTable[unitName].ilvl, r, g, b, r, g, b)
             GameTooltip:Show()
         end
-        mouseoverItemLevelQueries[unitName] = nil
-        return true  -- filter messages sent from mouseovers.
+        mouseoverPendingQueries[unitName] = nil
+        return true  -- Filter messages sent from mouseovers.
     end
     if not updater:IsPlaying() then
-        if GetTime() - timeGroupLeftDuringUpdate <= 1 then
-            return true  -- we just left the group but we are still receiving messages from last update, keep filtering.
+        if GetTime() - timeToggleOffWindow <= 1 then
+            -- We just toggled off the window but we are still receiving messages from last update, keep filtering.
+            return true
         end
-        return false  -- roster window is not open, don't filter.
+        return false  -- Roster window is not open, don't filter.
     end
     if rosterLeaversTimes[unitName] then
         if GetTime() - rosterLeaversTimes[unitName] <= 1 then
-            return true  -- we received a message for a unit that just left the group, filter it.
+            return true  -- We received a message for a unit who just left the group, filter it.
         end
     end
     local unitID = unitNameToUnitID(unitName)
@@ -429,19 +414,24 @@ local function queryUnitItemLevel(unitNameOrID)
     end
 end
 
-local function queryRosterItemLevels()
-    if not playerCanUseCommand() then
+local function queryRosterItemLevels(autoCancelAFK)
+    if UnitIsDeadOrGhost("player") then
+        return
+    end
+    if UnitIsAFK("player") and autoCancelAFK == nil then
         return
     end
     if IsInRaid() then
         for i = 1, GetNumGroupMembers() do
             queryUnitItemLevel("raid" .. i)
         end
-    elseif IsInGroup() then
-        for i = 1, GetNumSubgroupMembers() do
-            queryUnitItemLevel("party" .. i)
-        end
+    else
         queryUnitItemLevel("player")
+        if IsInGroup() then
+            for i = 1, GetNumSubgroupMembers() do
+                queryUnitItemLevel("party" .. i)
+            end
+        end
     end
 end
 
@@ -573,98 +563,112 @@ end
 local function renderRosterItemLevelsTooltip()
     rosterItemLevelsTooltip:ClearLines()
     rosterItemLevelsTooltip:SetText("Roster Item Levels", 1, 1, 1)
-    if #RosterItemLevelsPerCharDB.rosterInfo.sortedRosterTableKeys >= 1 then
-        for _, unitName in ipairs(RosterItemLevelsPerCharDB.rosterInfo.sortedRosterTableKeys) do
-            if RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName] then
-                local roleIcon, specIcon, stringLeft = _, _, ""
-                local class = RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName].class
-                local r, g, b = RAID_CLASS_COLORS[class].r, RAID_CLASS_COLORS[class].g, RAID_CLASS_COLORS[class].b
-                if RosterItemLevelsDB.options.role and RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName].role then
-                    roleIcon = formatIconForTooltip(roleIcons[RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName].role])
-                    stringLeft = roleIcon
-                end
-                if RosterItemLevelsDB.options.spec and RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName].specID then
-                    specIcon = formatIconForTooltip(specIcons[RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName].specID])
-                    stringLeft = roleIcon == nil and specIcon or stringLeft .. " " .. specIcon
-                end
-                stringLeft = (roleIcon == nil and specIcon == nil) and unitName or stringLeft .. " " .. unitName
-                if RosterItemLevelsPerCharDB.rosterInfo.leaderName == nil then
-                    RosterItemLevelsPerCharDB.rosterInfo.leaderName = retrieveGroupLeader()
-                end
-                if unitName == RosterItemLevelsPerCharDB.rosterInfo.leaderName then
-                    stringLeft = stringLeft .. " " .. formatIconForTooltip(leaderIcon)
-                end
-                rosterItemLevelsTooltip:AddDoubleLine(
-                    stringLeft, RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName].ilvl, r, g, b, r, g, b)
+    for _, unitName in ipairs(RosterItemLevelsPerCharDB.rosterInfo.sortedRosterTableKeys) do
+        if RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName] then
+            local roleIcon, specIcon, stringLeft = _, _, ""
+            local class = RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName].class
+            local r, g, b = RAID_CLASS_COLORS[class].r, RAID_CLASS_COLORS[class].g, RAID_CLASS_COLORS[class].b
+            if RosterItemLevelsDB.options.role and RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName].role then
+                roleIcon = formatIconForTooltip(roleIcons[RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName].role])
+                stringLeft = roleIcon
             end
-        end
-        if #RosterItemLevelsPerCharDB.rosterInfo.sortedRosterTableKeys >= 2 then
-            GameTooltip_AddBlankLinesToTooltip(rosterItemLevelsTooltip, 1)
+            if RosterItemLevelsDB.options.spec and RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName].specID then
+                specIcon = formatIconForTooltip(specIcons[RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName].specID])
+                stringLeft = roleIcon == nil and specIcon or stringLeft .. " " .. specIcon
+            end
+            stringLeft = (roleIcon == nil and specIcon == nil) and unitName or stringLeft .. " " .. unitName
+            if RosterItemLevelsPerCharDB.rosterInfo.leaderName == nil then
+                RosterItemLevelsPerCharDB.rosterInfo.leaderName = retrieveGroupLeader()
+            end
+            if unitName == RosterItemLevelsPerCharDB.rosterInfo.leaderName then
+                stringLeft = stringLeft .. " " .. formatIconForTooltip(leaderIcon)
+            end
             rosterItemLevelsTooltip:AddDoubleLine(
-                "Average (" .. #RosterItemLevelsPerCharDB.rosterInfo.sortedRosterTableKeys .. ")",
-                RosterItemLevelsPerCharDB.rosterInfo.avgRosterItemLevel, 1, 1, 1, 1, 1, 1)
+                stringLeft, RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName].ilvl, r, g, b, r, g, b)
         end
+    end
+    if #RosterItemLevelsPerCharDB.rosterInfo.sortedRosterTableKeys >= 2 then
+        GameTooltip_AddBlankLinesToTooltip(rosterItemLevelsTooltip, 1)
+        rosterItemLevelsTooltip:AddDoubleLine(
+            "Average (" .. #RosterItemLevelsPerCharDB.rosterInfo.sortedRosterTableKeys .. ")",
+            RosterItemLevelsPerCharDB.rosterInfo.avgRosterItemLevel, 1, 1, 1, 1, 1, 1)
     end
     rosterItemLevelsTooltip:Show()
 end
 
+local function startNewUpdate(autoCancelAFK)
+    ticker:Cancel()
+    queryRosterItemLevels(autoCancelAFK)
+    ticker = C_Timer.NewTicker(updateDelay, function() queryRosterItemLevels() end)
+end
+
+local function startNewUpdateAfterDelay(delay, autoCancelAFK)
+    C_Timer.After(delay, function()
+        if updater:IsPlaying() then
+            startNewUpdate(autoCancelAFK)
+        end
+    end)
+end
+
 local function toggleOffRosterWindow()
+    timeToggleOffWindow = GetTime()
     ticker:Cancel()
     updater:Stop()
     rosterItemLevelsTooltip:Hide()
 end
 
-local function toggleOnRosterWindow()
+local function toggleOnRosterWindow(autoCancelAFK)
     rosterItemLevelsTooltip:Show()
     rosterItemLevelsTooltip:SetOwner(UIParent, "ANCHOR_PRESERVE")
     updater:SetScript("OnLoop", renderRosterItemLevelsTooltip)
     updater:Play()
-    queryRosterItemLevels()
-    ticker = C_Timer.NewTicker(updateDelay, queryRosterItemLevels)
+    queryRosterItemLevels(autoCancelAFK)
+    ticker = C_Timer.NewTicker(updateDelay, function() queryRosterItemLevels() end)
 end
 
-local function toggleOnRosterWindowAfterDelay(delay)
-    autoCancelAwayMode()
+local function toggleOnRosterWindowAfterDelay(delay, autoCancelAFK)
     C_Timer.After(delay, function()
         if not updater:IsPlaying() then
-            toggleOnRosterWindow()
+            toggleOnRosterWindow(autoCancelAFK)
         end
     end)
 end
 
 local function mouseoverTooltipHook()
-    if not RosterItemLevelsDB.options.mouseover or not playerCanUseCommand() then
+    if not RosterItemLevelsDB.options.mouseover or UnitIsDeadOrGhost("player") or
+            (UnitIsAFK("player") and GetCVar("autoClearAFK") == "1") then
         return
     end
     local unitName, unitID = GameTooltip:GetUnit()
-    if UnitExists(unitID) and UnitIsPlayer(unitID) then  -- also true when unitID isn't connected but is in our group.
-        if UnitIsConnected(unitID) then  -- must be connected to use command .ilvl
-            if mouseoverredPlayersTable[unitName] then
-                if mouseoverredPlayersTable[unitName].lastUpdateTime and GetTime() - mouseoverredPlayersTable[unitName].lastUpdateTime < updateDelay then
+    if UnitExists(unitID) and UnitIsPlayer(unitID) then  -- Also true when unitID isn't connected but is in our group.
+        if UnitIsConnected(unitID) then  -- Must be connected to use command .ilvl.
+            if mouseoverPlayersTable[unitName] then
+                if mouseoverPlayersTable[unitName].lastUpdateTime and
+                        GetTime() - mouseoverPlayersTable[unitName].lastUpdateTime < updateDelay then
                     local r, g, b = getItemLevelColor(unitName)
-                    GameTooltip:AddDoubleLine("Item Level", mouseoverredPlayersTable[unitName].ilvl, r, g, b, r, g, b)
+                    GameTooltip:AddDoubleLine("Item Level", mouseoverPlayersTable[unitName].ilvl, r, g, b, r, g, b)
                     GameTooltip:Show()
-                else  -- data is too old, send new ilvl query
-                    if not mouseoverItemLevelQueries[unitName] then  -- make sure a query is not already pending.
-                        mouseoverItemLevelQueries[unitName] = true
+                else  -- Item level is too old, send a new query.
+                    if not mouseoverPendingQueries[unitName] then
+                        mouseoverPendingQueries[unitName] = true
                         queryUnitItemLevel(unitName)
                     end
                 end
-            else  -- first time we mouseover this unit.
-                mouseoverredPlayersTable[unitName] = {}
-                if not mouseoverredPlayersTable[unitName].class then
+            else  -- First time we mouseover this unit.
+                mouseoverPlayersTable[unitName] = {}
+                if not mouseoverPlayersTable[unitName].class then
                     local _, class = UnitClass(unitID)
-                    mouseoverredPlayersTable[unitName].class = class
+                    mouseoverPlayersTable[unitName].class = class
                 end
-                if not mouseoverItemLevelQueries[unitName] then
-                    mouseoverItemLevelQueries[unitName] = true
+                if not mouseoverPendingQueries[unitName] then
+                    mouseoverPendingQueries[unitName] = true
                     queryUnitItemLevel(unitName)
                 end
             end
-        else  -- unit isn't connected, can't refresh his ilvl so look for a cached value.
-            if mouseoverredPlayersTable[unitName] and mouseoverredPlayersTable[unitName].ilvl then
+        else  -- Unit isn't connected, can't refresh his ilvl so look for a cached value.
+            if mouseoverPlayersTable[unitName] and mouseoverPlayersTable[unitName].ilvl then
                 local r, g, b = getItemLevelColor(unitName)
-                GameTooltip:AddDoubleLine("Item Level", mouseoverredPlayersTable[unitName].ilvl, r, g, b, r, g, b)
+                GameTooltip:AddDoubleLine("Item Level", mouseoverPlayersTable[unitName].ilvl, r, g, b, r, g, b)
                 GameTooltip:Show()
             end
         end
@@ -672,14 +676,22 @@ local function mouseoverTooltipHook()
 end
 
 function frame:CINEMATIC_STOP()
-    -- Fix a bug were the window would lose its owner after a cinematic.
-    if updater:IsPlaying() then  -- window was shown before the cinematic, set his owner back.
+    -- Fix a bug were the roster window would lose its owner after a cinematic.
+    if updater:IsPlaying() then
+        -- Roster window was shown before the cinematic, set his owner back.
         rosterItemLevelsTooltip:SetOwner(UIParent, "ANCHOR_PRESERVE")
     end
 end
 
 function frame:PLAYER_LEAVING_WORLD()
-    RosterItemLevelsPerCharDB.window.wasShown = rosterItemLevelsTooltip:IsShown()  -- save window state in DB in case of a reload/relog.
+    -- Saves roster window state in case of a reload/relog.
+    RosterItemLevelsPerCharDB.window.wasShown = rosterItemLevelsTooltip:IsShown()
+end
+
+function frame:PLAYER_EQUIPMENT_CHANGED()
+    if updater:IsPlaying() then
+        queryUnitItemLevel("player")
+    end
 end
 
 function frame:PARTY_LEADER_CHANGED()
@@ -687,22 +699,18 @@ function frame:PARTY_LEADER_CHANGED()
 end
 
 function frame:GROUP_ROSTER_UPDATE()  -- A player joined or left the group.
-    local numGroupMembersRemoved = cleanRosterTable()  -- Remove the player from the DB if he left.
+    local numGroupMembersRemoved = cleanRosterTable()  -- Remove the player from the savedVariable if he left.
     if updater:IsPlaying() and numGroupMembersRemoved == 0 then
         -- A player joined, start a new update.
-        ticker:Cancel()
-        queryRosterItemLevels()
-        ticker = C_Timer.NewTicker(updateDelay, queryRosterItemLevels)
+        startNewUpdate()
     end
 end
 
 function frame:GROUP_LEFT()
     self:UnregisterEvent("GROUP_LEFT")
-    self:UnregisterEvent("CINEMATIC_STOP")
     self:UnregisterEvent("GROUP_ROSTER_UPDATE")
     self:UnregisterEvent("PARTY_LEADER_CHANGED")
     if updater:IsPlaying() then
-        timeGroupLeftDuringUpdate = GetTime()
         toggleOffRosterWindow()
     end
     resetRosterInfo()
@@ -710,11 +718,12 @@ end
 
 function frame:GROUP_JOINED()
     self:RegisterEvent("GROUP_LEFT")
-    self:RegisterEvent("CINEMATIC_STOP")
     self:RegisterEvent("GROUP_ROSTER_UPDATE")
     self:RegisterEvent("PARTY_LEADER_CHANGED")
-    if RosterItemLevelsDB.options.autoToggle then
-        toggleOnRosterWindowAfterDelay(0.5)
+    if updater:IsPlaying() then
+        startNewUpdateAfterDelay(0.5, true)
+    elseif RosterItemLevelsDB.options.autoToggle then
+        toggleOnRosterWindowAfterDelay(0.5, true)  -- Wait a bit for group data to be loaded in the client.
     end
 end
 
@@ -722,17 +731,16 @@ function frame:PLAYER_LOGIN()  -- Registers on login / reload.
     self:RegisterEvent("GROUP_JOINED")
     if IsInRaid() or IsInGroup() then
         self:RegisterEvent("GROUP_LEFT")
-        self:RegisterEvent("CINEMATIC_STOP")
         self:RegisterEvent("GROUP_ROSTER_UPDATE")
         self:RegisterEvent("PARTY_LEADER_CHANGED")
         LibGroupInspect:Rescan()
         RosterItemLevelsPerCharDB.rosterInfo.leaderName = retrieveGroupLeader()
-        if RosterItemLevelsPerCharDB.window.wasShown then
-            toggleOnRosterWindowAfterDelay(0.5)
-        end
     else
-        -- Wipe old data in case we left a group while we were reloging or reloading.
+        -- Remove old data in case we left a group while we were reloging or reloading.
         resetRosterInfo()
+    end
+    if RosterItemLevelsPerCharDB.window.wasShown then
+        toggleOnRosterWindowAfterDelay(0.5, true)  -- Wait a bit for group data to be loaded in the client.
     end
 end
 
@@ -804,14 +812,15 @@ function frame:ADDON_LOADED(name)
 
     -- Minimap icon
     if minimapIcon and not minimapIcon:IsRegistered(addonName .. "LDB") then
-        minimapIcon:Register(addonName .. "LDB", rosterItemLevelsLDB, RosterItemLevelsDB.options.minimap)  -- Register and display icon on minimap.
+        -- Register and display RosterItemLevels minimap icon.
+        minimapIcon:Register(addonName .. "LDB", rosterItemLevelsLDB, RosterItemLevelsDB.options.minimap)
     end
 
     -- Options panel
     optionsPanel.name = addonName
     InterfaceOptions_AddCategory(optionsPanel)
     optionsPanel.okay = function(self)
-        -- Apply changes based on checkbutton state.
+        -- Apply changes based on options states.
         local checked = minimapIconCheckButton:GetChecked()
         minimapIconCheckButton:SetChecked(checked)
         RosterItemLevelsDB.options.minimap.hide = not checked
@@ -978,19 +987,21 @@ function frame:ADDON_LOADED(name)
             end
         end
     end)
-
+    -- Set RosterItemLevels command.
     SLASH_ROSTERITEMLEVELS1 = "/ilvls"
-
+    -- Register events unrelated to groups.
     self:RegisterEvent("PLAYER_LOGIN")
+    self:RegisterEvent("CINEMATIC_STOP")
     self:RegisterEvent("PLAYER_LEAVING_WORLD")
-
+    self:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
     -- Create an animation to render rosterItemLevelsTooltip.
     updater = frame:CreateAnimationGroup()
     updater:SetLooping("REPEAT")
     animation = updater:CreateAnimation()
     animation:SetDuration(0.05)
-
+    -- Listen to system messages.
     ChatFrame_AddMessageEventFilter("CHAT_MSG_SYSTEM", filterMessageSystem)
+    -- Hook GameTooltip to display item level in it.
     GameTooltip:HookScript("OnTooltipSetUnit", mouseoverTooltipHook)
 end
 
@@ -1016,21 +1027,13 @@ function rosterItemLevelsLDB:OnClick(button)
     elseif button == "LeftButton" then
         SlashCmdList.ROSTERITEMLEVELS("")  -- same as "/ilvls" command. Will toggle On or Off.
     elseif button == "RightButton" then
-        InterfaceOptionsFrame_OpenToCategory(addonName)  -- First open generic interface options frame
-        InterfaceOptionsFrame_OpenToCategory(addonName)  -- Then go to RosterItemLevels options frame.
+        InterfaceOptionsFrame_OpenToCategory(addonName)  -- First open generic interface options frame.
+        InterfaceOptionsFrame_OpenToCategory(addonName)  -- Then go to RosterItemLevels options panel.
     end
 end
 
 function SlashCmdList.ROSTERITEMLEVELS(msg, editbox)
     local arg = string.split(" ", msg)
-    if not IsInRaid() and not IsInGroup() then
-        if arg == "report" then
-            print("You must be in a group to toggle the report window.")
-            return
-        end
-        print("You must be in a group to toggle the roster window.")
-        return
-    end
     if arg == "report" then  -- /ilvls report
         if updater:IsPlaying() then
             openReportWindow()
@@ -1041,7 +1044,7 @@ function SlashCmdList.ROSTERITEMLEVELS(msg, editbox)
         if updater:IsPlaying() then
             toggleOffRosterWindow()
         else
-            toggleOnRosterWindowAfterDelay(0.5)
+            toggleOnRosterWindow(true)
         end
     else
         print("Help")
