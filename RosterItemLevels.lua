@@ -405,9 +405,9 @@ local function filterMessageSystem(chatFrame, event, msg, ...)
     return true
 end
 
-local function queryUnitItemLevel(unitNameOrID)
-    local unitName = UnitName(unitNameOrID) or unitNameOrID
-    if isValidCharacterName(unitName) then
+local function queryUnitItemLevel(unitID)
+    local unitName = UnitName(unitID)
+    if isValidCharacterName(unitName) and UnitIsConnected(unitID) then
         -- Note: unitName fits the criterias for a character name
         -- but .ilvl can still return "Invalid character" if unitName doesn't exist in the server's DB.
         SendChatMessage(".ilvl " .. unitName, "EMOTE")  -- Will call filterMessageSystem() on server response.
@@ -651,7 +651,7 @@ local function mouseoverTooltipHook()
                 else  -- Item level is too old, send a new query.
                     if not mouseoverPendingQueries[unitName] then
                         mouseoverPendingQueries[unitName] = true
-                        queryUnitItemLevel(unitName)
+                        queryUnitItemLevel(unitID)
                     end
                 end
             else  -- First time we mouseover this unit.
@@ -662,7 +662,7 @@ local function mouseoverTooltipHook()
                 end
                 if not mouseoverPendingQueries[unitName] then
                     mouseoverPendingQueries[unitName] = true
-                    queryUnitItemLevel(unitName)
+                    queryUnitItemLevel(unitID)
                 end
             end
         else  -- Unit isn't connected, can't refresh his ilvl so look for a cached value.
@@ -728,7 +728,8 @@ function frame:GROUP_JOINED()
 end
 
 function frame:PLAYER_LOGIN()  -- Registers on login / reload.
-    self:RegisterEvent("GROUP_JOINED")
+    -- Make sure GROUP_JOINED doesn't fire when we login inside a group.
+    C_Timer.After(0.1, function() self:RegisterEvent("GROUP_JOINED") end)
     if IsInRaid() or IsInGroup() then
         self:RegisterEvent("GROUP_LEFT")
         self:RegisterEvent("GROUP_ROSTER_UPDATE")
