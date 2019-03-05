@@ -410,7 +410,7 @@ local function queryUnitItemLevel(unitID)
     if isValidCharacterName(unitName) and UnitIsConnected(unitID) then
         -- Note: unitName fits the criterias for a character name
         -- but .ilvl can still return "Invalid character" if unitName doesn't exist in the server's DB.
-        SendChatMessage(".ilvl " .. unitName, "EMOTE")  -- Will call filterMessageSystem() on server response.
+        SendChatMessage(".ilvl " .. unitName, "EMOTE")  -- filterMessageSystem() will fire on server's response.
     end
 end
 
@@ -418,7 +418,7 @@ local function queryRosterItemLevels(autoCancelAFK)
     if UnitIsDeadOrGhost("player") then
         return
     end
-    if UnitIsAFK("player") and autoCancelAFK == nil then
+    if UnitIsAFK("player") and not autoCancelAFK then
         return
     end
     if IsInRaid() then
