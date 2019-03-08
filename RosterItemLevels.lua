@@ -41,7 +41,7 @@ local LibGroupInspect = LibStub("LibGroupInSpecT-1.1")
 local timeToggleOffWindow = 0
 local updateDelay = 5  -- Elapsed time between updates in seconds.
 local ticker, updater, animation, processedChatFrame
-local mouseoverPlayersTable, mouseoverPendingQueries, rosterLeaversTimes = {}, {}, {}
+local mouseoverPlayersTable, mouseoverPendingQueries, rosterLeaversTimes, connectedBeforeQuery = {}, {}, {}, {}
 
 local minLowItemLevel, maxLowItemLevel, maxHighItemLevel = 0, 700, 959
 -- Note: We don't merge the tables to keep a better color accuracy.
@@ -357,15 +357,42 @@ local function updateUnitInfo(unitName, unitID, itemLevel)
     updateRosterTableDependencies()
 end
 
-local function filterMessageSystem(chatFrame, event, msg, ...)
-    if not string_find(msg, "Equipped ilvl for") and not string_find(msg, "Equipped ilvl pentru") then
-        return false  -- Not the message we are looking for, don't filter.
+local function characterDisconnectedAfterQuery()
+    if IsInRaid() then
+        for i = 1, GetNumGroupMembers() do
+            local unitID = "raid" .. i
+            local unitName = UnitName(unitID)
+            if not UnitIsConnected(unitID) and connectedBeforeQuery[unitName] then
+                connectedBeforeQuery[unitName] = nil
+                return true
+            end
+        end
+    elseif IsInGroup() then
+        for i = 1, GetNumSubgroupMembers() do
+            local unitID = "party" .. i
+            local unitName = UnitName(unitID)
+            if not UnitIsConnected(unitID) and connectedBeforeQuery[unitName] then
+                connectedBeforeQuery[unitName] = nil
+                return true
+            end
+        end
     end
+    return false
+end
+
+local function filterMessageSystem(chatFrame, event, msg, ...)
     if not processedChatFrame then
-        processedChatFrame = chatFrame  -- Saves the chatFrame that we want to process data from.
+        processedChatFrame = chatFrame
     end
     if chatFrame ~= processedChatFrame then
-        return true  -- Filter the message from all chatFrames but only process data from processedChatFrame.
+        return true  -- Filter messages coming from other chat frames.
+    end
+    if string_find(msg, "Invalid character") or string_find(msg, "Caracter invalid") then
+        -- Filter "Invalid character" if we receive it for a character who disconnected after the query was sent.
+        return characterDisconnectedAfterQuery()
+    end
+    if not string_find(msg, "Equipped ilvl for") and not string_find(msg, "Equipped ilvl pentru") then
+        return false  -- Not the message we are looking for, don't filter.
     end
     local unitName, itemLevel = string_match(msg, "Equipped ilvl for (%a+): ([0-9]+)")
     if not unitName then  -- Server response is in Romanian.
@@ -397,7 +424,7 @@ local function filterMessageSystem(chatFrame, event, msg, ...)
     local unitID = unitNameToUnitID(unitName)
     if not unitID then
         if IsInRaid() or IsInGroup() then
-            -- Don't filter user requests for people outside the group.
+            -- Don't filter user requests for people outside of the group.
             return false
         end
     end
@@ -408,8 +435,7 @@ end
 local function queryUnitItemLevel(unitID)
     local unitName = UnitName(unitID)
     if isValidCharacterName(unitName) and UnitIsConnected(unitID) then
-        -- Note: unitName fits the criterias for a character name
-        -- but .ilvl can still return "Invalid character" if unitName doesn't exist in the server's DB.
+        connectedBeforeQuery[unitName] = true
         SendChatMessage(".ilvl " .. unitName, "EMOTE")  -- filterMessageSystem() will fire on server's response.
     end
 end
@@ -466,7 +492,8 @@ local function openReportWindow()
     reportWindow:EnableResize(false)
     reportWindow:SetLayout("Flow")
     reportWindow:SetWidth(250)
-    reportWindow.LayoutFinished = function(self, _, height) reportWindow:SetHeight(height + 57) end  -- AceGUI hack to auto-set height of Window widget.
+    -- AceGUI hack to auto-set report window's height.
+    reportWindow.LayoutFinished = function(self, _, height) reportWindow:SetHeight(height + 57) end
     reportWindow:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
     reportWindow:SetTitle(addonName .. " - Report")
     reportWindow:SetCallback("OnClose", function(widget, callback) closeReportWindow() end)
@@ -596,16 +623,13 @@ local function renderRosterItemLevelsTooltip()
     rosterItemLevelsTooltip:Show()
 end
 
-local function startNewUpdate(autoCancelAFK)
-    ticker:Cancel()
-    queryRosterItemLevels(autoCancelAFK)
-    ticker = C_Timer.NewTicker(updateDelay, function() queryRosterItemLevels() end)
-end
-
-local function startNewUpdateAfterDelay(delay, autoCancelAFK)
+local function startNewUpdate(autoCancelAFK, delay)
+    delay = delay or 0
     C_Timer.After(delay, function()
         if updater:IsPlaying() then
-            startNewUpdate(autoCancelAFK)
+            ticker:Cancel()
+            queryRosterItemLevels(autoCancelAFK)
+            ticker = C_Timer.NewTicker(updateDelay, function() queryRosterItemLevels(false) end)
         end
     end)
 end
@@ -617,19 +641,16 @@ local function toggleOffRosterWindow()
     rosterItemLevelsTooltip:Hide()
 end
 
-local function toggleOnRosterWindow(autoCancelAFK)
-    rosterItemLevelsTooltip:Show()
-    rosterItemLevelsTooltip:SetOwner(UIParent, "ANCHOR_PRESERVE")
-    updater:SetScript("OnLoop", renderRosterItemLevelsTooltip)
-    updater:Play()
-    queryRosterItemLevels(autoCancelAFK)
-    ticker = C_Timer.NewTicker(updateDelay, function() queryRosterItemLevels() end)
-end
-
-local function toggleOnRosterWindowAfterDelay(delay, autoCancelAFK)
+local function toggleOnRosterWindow(autoCancelAFK, delay)
+    delay = delay or 0
     C_Timer.After(delay, function()
         if not updater:IsPlaying() then
-            toggleOnRosterWindow(autoCancelAFK)
+            rosterItemLevelsTooltip:Show()
+            rosterItemLevelsTooltip:SetOwner(UIParent, "ANCHOR_PRESERVE")
+            updater:SetScript("OnLoop", renderRosterItemLevelsTooltip)
+            updater:Play()
+            queryRosterItemLevels(autoCancelAFK)
+            ticker = C_Timer.NewTicker(updateDelay, function() queryRosterItemLevels(false) end)
         end
     end)
 end
@@ -702,7 +723,7 @@ function frame:GROUP_ROSTER_UPDATE()  -- A player joined or left the group.
     local numGroupMembersRemoved = cleanRosterTable()  -- Remove the player from the savedVariable if he left.
     if updater:IsPlaying() and numGroupMembersRemoved == 0 then
         -- A player joined, start a new update.
-        startNewUpdate()
+        startNewUpdate(false)
     end
 end
 
@@ -721,9 +742,9 @@ function frame:GROUP_JOINED()
     self:RegisterEvent("GROUP_ROSTER_UPDATE")
     self:RegisterEvent("PARTY_LEADER_CHANGED")
     if updater:IsPlaying() then
-        startNewUpdateAfterDelay(0.5, true)
+        startNewUpdate(true, 0.5)
     elseif RosterItemLevelsDB.options.autoToggle then
-        toggleOnRosterWindowAfterDelay(0.5, true)  -- Wait a bit for group data to be loaded in the client.
+        toggleOnRosterWindow(true, 1)  -- Toogle on after 1 second. We have to wait for group data to be available.
     end
 end
 
@@ -741,7 +762,7 @@ function frame:PLAYER_LOGIN()  -- Registers on login / reload.
         resetRosterInfo()
     end
     if RosterItemLevelsPerCharDB.window.wasShown then
-        toggleOnRosterWindowAfterDelay(0.5, true)  -- Wait a bit for group data to be loaded in the client.
+        toggleOnRosterWindow(true, 1)  -- Toogle on after 1 second. We have to wait for group data to be available.
     end
 end
 
