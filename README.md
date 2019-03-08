@@ -1,6 +1,6 @@
 # RosterItemLevels
 Allows you to quickly see the item levels of people.  
-[https://imgur.com/a/nhEUBMC](https://imgur.com/a/nhEUBMC)
+[https://imgur.com/a/b6YPNLO](https://imgur.com/a/b6YPNLO)
 
 ## Features
 * [Show the item level in the tooltip when you mouseover a player.](https://imgur.com/H36uDo1.jpg)
