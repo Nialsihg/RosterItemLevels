@@ -363,7 +363,6 @@ local function characterDisconnectedAfterQuery()
             local unitID = "raid" .. i
             local unitName = UnitName(unitID)
             if not UnitIsConnected(unitID) and connectedBeforeQuery[unitName] then
-                connectedBeforeQuery[unitName] = nil
                 return true
             end
         end
@@ -372,7 +371,6 @@ local function characterDisconnectedAfterQuery()
             local unitID = "party" .. i
             local unitName = UnitName(unitID)
             if not UnitIsConnected(unitID) and connectedBeforeQuery[unitName] then
-                connectedBeforeQuery[unitName] = nil
                 return true
             end
         end
@@ -381,18 +379,18 @@ local function characterDisconnectedAfterQuery()
 end
 
 local function filterMessageSystem(chatFrame, event, msg, ...)
-    if not processedChatFrame then
-        processedChatFrame = chatFrame
-    end
-    if chatFrame ~= processedChatFrame then
-        return true  -- Filter messages coming from other chat frames.
-    end
     if string_find(msg, "Invalid character") or string_find(msg, "Caracter invalid") then
         -- Filter "Invalid character" if we receive it for a character who disconnected after the query was sent.
         return characterDisconnectedAfterQuery()
     end
     if not string_find(msg, "Equipped ilvl for") and not string_find(msg, "Equipped ilvl pentru") then
         return false  -- Not the message we are looking for, don't filter.
+    end
+    if not processedChatFrame then
+        processedChatFrame = chatFrame
+    end
+    if chatFrame ~= processedChatFrame then
+        return true  -- Filter ilvl messages coming from other chat frames.
     end
     local unitName, itemLevel = string_match(msg, "Equipped ilvl for (%a+): ([0-9]+)")
     if not unitName then  -- Server response is in Romanian.
@@ -647,10 +645,13 @@ local function toggleOnRosterWindow(autoCancelAFK, delay)
         if not updater:IsPlaying() then
             rosterItemLevelsTooltip:Show()
             rosterItemLevelsTooltip:SetOwner(UIParent, "ANCHOR_PRESERVE")
+            animation:SetDuration(0.05)
             updater:SetScript("OnLoop", renderRosterItemLevelsTooltip)
             updater:Play()
             queryRosterItemLevels(autoCancelAFK)
             ticker = C_Timer.NewTicker(updateDelay, function() queryRosterItemLevels(false) end)
+            -- Reduces the CPU usage by lowering the refresh rate of the roster window once it has fully loaded.
+            C_Timer.After(1, function() animation:SetDuration(0.5) end)
         end
     end)
 end
@@ -744,7 +745,7 @@ function frame:GROUP_JOINED()
     if updater:IsPlaying() then
         startNewUpdate(true, 0.5)
     elseif RosterItemLevelsDB.options.autoToggle then
-        toggleOnRosterWindow(true, 1)  -- Toogle on after 1 second. We have to wait for group data to be available.
+        toggleOnRosterWindow(true, 1)  -- Toggle on after 1 second. We have to wait for group data to be available.
     end
 end
 
@@ -762,7 +763,7 @@ function frame:PLAYER_LOGIN()  -- Registers on login / reload.
         resetRosterInfo()
     end
     if RosterItemLevelsPerCharDB.window.wasShown then
-        toggleOnRosterWindow(true, 1)  -- Toogle on after 1 second. We have to wait for group data to be available.
+        toggleOnRosterWindow(true, 1)  -- Toggle on after 1 second. We have to wait for group data to be available.
     end
 end
 
@@ -1020,7 +1021,6 @@ function frame:ADDON_LOADED(name)
     updater = frame:CreateAnimationGroup()
     updater:SetLooping("REPEAT")
     animation = updater:CreateAnimation()
-    animation:SetDuration(0.05)
     -- Listen to system messages.
     ChatFrame_AddMessageEventFilter("CHAT_MSG_SYSTEM", filterMessageSystem)
     -- Hook GameTooltip to display item level in it.
