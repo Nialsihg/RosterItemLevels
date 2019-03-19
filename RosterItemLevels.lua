@@ -24,7 +24,6 @@ local roleCheckButton = CreateFrame("CheckButton", addonName .. "ShowRole", opti
 -- Used to create a report window.
 local AceGUI = LibStub("AceGUI-3.0")
 local AutoComplete = LibStub("AceGUI-3.0-Completing-EditBox")
-local reportWindow  -- Used to store AceGUI's Window container object.
 
 -- Load libs for minimap icon.
 local rosterItemLevelsLDB = LibStub("LibDataBroker-1.1"):NewDataObject(addonName .. "LDB", {
@@ -38,10 +37,11 @@ local minimapIcon = LibStub("LibDBIcon-1.0")
 -- Used to get the specialization and role of a unit.
 local LibGroupInspect = LibStub("LibGroupInSpecT-1.1")
 
-local timeToggleOffWindow = 0
-local updateDelay = 5  -- Elapsed time between updates in seconds.
+local reportWindow  -- Used to store AceGUI's Window container object.
 local ticker, updater, animation, processedChatFrame
-local mouseoverPlayersTable, mouseoverPendingQueries, rosterLeaversTimes, connectedBeforeQuery = {}, {}, {}, {}
+local updateDelay = 5  -- Elapsed time between updates in seconds.
+local timeToggleOffWindow = 0
+local mouseoverPlayersTable, mouseoverPendingQueries, rosterLeaversTimes, connectedBeforeQuery, scheduledQueries = {}, {}, {}, {}, {}
 
 local minLowItemLevel, maxLowItemLevel, maxHighItemLevel = 0, 700, 959
 -- Note: We don't merge the tables to keep a better color accuracy.
@@ -134,6 +134,7 @@ local GetNumGroupMembers = GetNumGroupMembers
 local GetNumSubgroupMembers = GetNumSubgroupMembers
 local pairs = pairs
 local ipairs = ipairs
+local unpack = unpack
 local tonumber = tonumber
 local string_find = string.find
 local string_match = string.match
@@ -230,11 +231,6 @@ local function computeAverageRosterItemLevel()
     return math_floor(sum / #RosterItemLevelsPerCharDB.rosterInfo.sortedRosterTableKeys + 0.5)  -- rounded up or down and troncated.
 end
 
-local function updateRosterTableDependencies()
-    RosterItemLevelsPerCharDB.rosterInfo.sortedRosterTableKeys = sortRosterTableKeys(sortDesc)
-    RosterItemLevelsPerCharDB.rosterInfo.avgRosterItemLevel = computeAverageRosterItemLevel()
-end
-
 local function cleanRosterTable()
     local removedFromRoster = {}
     for savedName in pairs(RosterItemLevelsPerCharDB.rosterInfo.rosterTable) do
@@ -265,15 +261,11 @@ local function cleanRosterTable()
     for i = 1, #removedFromRoster do
         local unitName = removedFromRoster[i]
         rosterLeaversTimes[unitName] = GetTime()
+        scheduledQueries[unitName] = nil
         RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName] = nil
     end
-    updateRosterTableDependencies()
-    return #removedFromRoster
-end
-
-local function resetRosterInfo()
-    cleanRosterTable()
-    RosterItemLevelsPerCharDB.rosterInfo.leaderName = nil
+    RosterItemLevelsPerCharDB.rosterInfo.sortedRosterTableKeys = sortRosterTableKeys(sortDesc)
+    RosterItemLevelsPerCharDB.rosterInfo.avgRosterItemLevel = computeAverageRosterItemLevel()
 end
 
 local function retrieveGroupLeader()
@@ -304,7 +296,7 @@ local function retrieveGroupLeader()
 end
 
 local function unitNameToUnitID(unitName)
-    -- Look in cache first.
+    -- Look in the cache first.
     if RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName] and
             RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName].lastKnownUnitID then
         local lastKnownUnitID = RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName].lastKnownUnitID
@@ -354,7 +346,8 @@ local function updateUnitInfo(unitName, unitID, itemLevel)
     end
     RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName].ilvl = tonumber(itemLevel)
     RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName].lastKnownUnitID = unitID
-    updateRosterTableDependencies()
+    RosterItemLevelsPerCharDB.rosterInfo.sortedRosterTableKeys = sortRosterTableKeys(sortDesc)
+    RosterItemLevelsPerCharDB.rosterInfo.avgRosterItemLevel = computeAverageRosterItemLevel()
 end
 
 local function characterDisconnectedAfterQuery()
@@ -386,28 +379,16 @@ local function filterMessageSystem(chatFrame, event, msg, ...)
     if not string_find(msg, "Equipped ilvl for") and not string_find(msg, "Equipped ilvl pentru") then
         return false  -- Not the message we are looking for, don't filter.
     end
-    if not processedChatFrame then
-        processedChatFrame = chatFrame
-    end
-    if chatFrame ~= processedChatFrame then
-        return true  -- Filter ilvl messages coming from other chat frames.
-    end
     local unitName, itemLevel = string_match(msg, "Equipped ilvl for (%a+): ([0-9]+)")
     if not unitName then  -- Server response is in Romanian.
         unitName, itemLevel = string_match(msg, "Equipped ilvl pentru (%a+): ([0-9]+)")
     end
-    if mouseoverPendingQueries[unitName] then
-        mouseoverPlayersTable[unitName].ilvl = tonumber(itemLevel)
-        mouseoverPlayersTable[unitName].lastUpdateTime = GetTime()
-        if unitName == GameTooltip:GetUnit() then  -- Mouse is still over the unit we received a message for.
-            local r, g, b = getItemLevelColor(unitName)
-            GameTooltip:AddDoubleLine("Item Level", mouseoverPlayersTable[unitName].ilvl, r, g, b, r, g, b)
-            GameTooltip:Show()
+    if not mouseoverPendingQueries[unitName] then
+        if mouseoverPlayersTable[unitName] and GetTime() - mouseoverPlayersTable[unitName].lastUpdateTime <= 1 then
+            return true
         end
-        mouseoverPendingQueries[unitName] = nil
-        return true  -- Filter messages sent from mouseovers.
     end
-    if not updater:IsPlaying() then
+    if not updater:IsPlaying() and not mouseoverPendingQueries[unitName] then
         if GetTime() - timeToggleOffWindow <= 1 then
             -- We just toggled off the window but we are still receiving messages from last update, keep filtering.
             return true
@@ -419,26 +400,53 @@ local function filterMessageSystem(chatFrame, event, msg, ...)
             return true  -- We received a message for a unit who just left the group, filter it.
         end
     end
-    local unitID = unitNameToUnitID(unitName)
-    if not unitID then
-        if IsInRaid() or IsInGroup() then
-            -- Don't filter user requests for people outside of the group.
-            return false
-        end
+    if not processedChatFrame then
+        processedChatFrame = chatFrame
     end
-    updateUnitInfo(unitName, unitID, itemLevel)
+    if mouseoverPendingQueries[unitName] then
+        mouseoverPlayersTable[unitName].ilvl = tonumber(itemLevel)
+        mouseoverPlayersTable[unitName].lastUpdateTime = GetTime()
+        if unitName == GameTooltip:GetUnit() then  -- The tooltip still displays the unit we received a message for.
+            local r, g, b = getItemLevelColor(unitName)
+            GameTooltip:AddDoubleLine("Item Level", mouseoverPlayersTable[unitName].ilvl, r, g, b, r, g, b)
+            GameTooltip:Show()
+        end
+        mouseoverPendingQueries[unitName] = nil
+        return true  -- Filter messages sent from mouseovers.
+    end
+    if not scheduledQueries[unitName] then
+        return false  -- Don't filter messages coming from a manual query.
+    end
+    if chatFrame ~= processedChatFrame then
+        -- Filter duplicates coming from other chat frames.
+        return true
+    end
+    local unitID = unitNameToUnitID(unitName)
+    if unitID then
+        updateUnitInfo(unitName, unitID, itemLevel)
+    end
     return true
 end
 
 local function queryUnitItemLevel(unitID)
     local unitName = UnitName(unitID)
     if isValidCharacterName(unitName) and UnitIsConnected(unitID) then
+        if not mouseoverPendingQueries[unitName] then
+            scheduledQueries[unitName] = true
+        end
         connectedBeforeQuery[unitName] = true
         SendChatMessage(".ilvl " .. unitName, "EMOTE")  -- filterMessageSystem() will fire on server's response.
     end
 end
 
 local function queryRosterItemLevels(autoCancelAFK)
+    local groupSize = IsInRaid() and GetNumGroupMembers() or GetNumSubgroupMembers() + 1
+    if groupSize < #RosterItemLevelsPerCharDB.rosterInfo.sortedRosterTableKeys then
+        cleanRosterTable()
+    end
+    if IsInGroup() and RosterItemLevelsPerCharDB.rosterInfo.leaderName == nil then
+        RosterItemLevelsPerCharDB.rosterInfo.leaderName = retrieveGroupLeader()
+    end
     if UnitIsDeadOrGhost("player") then
         return
     end
@@ -602,9 +610,6 @@ local function renderRosterItemLevelsTooltip()
                 stringLeft = roleIcon == nil and specIcon or stringLeft .. " " .. specIcon
             end
             stringLeft = (roleIcon == nil and specIcon == nil) and unitName or stringLeft .. " " .. unitName
-            if RosterItemLevelsPerCharDB.rosterInfo.leaderName == nil then
-                RosterItemLevelsPerCharDB.rosterInfo.leaderName = retrieveGroupLeader()
-            end
             if unitName == RosterItemLevelsPerCharDB.rosterInfo.leaderName then
                 stringLeft = stringLeft .. " " .. formatIconForTooltip(leaderIcon)
             end
@@ -637,6 +642,7 @@ local function toggleOffRosterWindow()
     ticker:Cancel()
     updater:Stop()
     rosterItemLevelsTooltip:Hide()
+    wipe(scheduledQueries)
 end
 
 local function toggleOnRosterWindow(autoCancelAFK, delay)
@@ -720,11 +726,18 @@ function frame:PARTY_LEADER_CHANGED()
     RosterItemLevelsPerCharDB.rosterInfo.leaderName = retrieveGroupLeader()
 end
 
-function frame:GROUP_ROSTER_UPDATE()  -- A player joined or left the group.
-    local numGroupMembersRemoved = cleanRosterTable()  -- Remove the player from the savedVariable if he left.
-    if updater:IsPlaying() and numGroupMembersRemoved == 0 then
-        -- A player joined, start a new update.
-        startNewUpdate(false)
+function frame:GROUP_ROSTER_UPDATE()
+    -- This event also triggers on player connects/disconnects.
+    -- We want to make sure that a player actually joined or left the group.
+    local groupSize = IsInRaid() and GetNumGroupMembers() or GetNumSubgroupMembers() + 1
+    if groupSize < #RosterItemLevelsPerCharDB.rosterInfo.sortedRosterTableKeys then
+        -- A player left, remove him from the roster window.
+        cleanRosterTable()
+    elseif groupSize > #RosterItemLevelsPerCharDB.rosterInfo.sortedRosterTableKeys then
+        if updater:IsPlaying() then
+            -- A player joined, start a new update.
+            startNewUpdate(false)
+        end
     end
 end
 
@@ -735,7 +748,8 @@ function frame:GROUP_LEFT()
     if updater:IsPlaying() then
         toggleOffRosterWindow()
     end
-    resetRosterInfo()
+    cleanRosterTable()
+    RosterItemLevelsPerCharDB.rosterInfo.leaderName = nil
 end
 
 function frame:GROUP_JOINED()
@@ -749,19 +763,19 @@ function frame:GROUP_JOINED()
     end
 end
 
-function frame:PLAYER_LOGIN()  -- Registers on login / reload.
+function frame:PLAYER_LOGIN()  -- Fires on login / reload.
     -- Make sure GROUP_JOINED doesn't fire when we login inside a group.
     C_Timer.After(0.1, function() self:RegisterEvent("GROUP_JOINED") end)
-    if IsInRaid() or IsInGroup() then
+    if IsInGroup() then
         self:RegisterEvent("GROUP_LEFT")
         self:RegisterEvent("GROUP_ROSTER_UPDATE")
         self:RegisterEvent("PARTY_LEADER_CHANGED")
         LibGroupInspect:Rescan()
         RosterItemLevelsPerCharDB.rosterInfo.leaderName = retrieveGroupLeader()
     else
-        -- Remove old data in case we left a group while we were reloging or reloading.
-        resetRosterInfo()
+        RosterItemLevelsPerCharDB.rosterInfo.leaderName = nil
     end
+    cleanRosterTable()
     if RosterItemLevelsPerCharDB.window.wasShown then
         toggleOnRosterWindow(true, 1)  -- Toggle on after 1 second. We have to wait for group data to be available.
     end
@@ -825,7 +839,7 @@ function frame:ADDON_LOADED(name)
     end
     if type(RosterItemLevelsPerCharDB.rosterInfo.rosterTable) ~= "table" then
         -- We store roster data informations inside a saved variable so that we don't lose it when we relog or reload.
-        -- Especially for specID and role which takes time to get due to inspection delays.
+        -- Especially for specID and role which take time to get due to inspection delays.
         -- Saved specID and role are used until we receive updated values.
         RosterItemLevelsPerCharDB.rosterInfo.rosterTable = {}
     end
