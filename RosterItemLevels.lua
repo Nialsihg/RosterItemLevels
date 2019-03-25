@@ -387,18 +387,16 @@ local function filterMessageSystem(chatFrame, event, msg, ...)
         if mouseoverPlayersTable[unitName] and GetTime() - mouseoverPlayersTable[unitName].lastUpdateTime <= 1 then
             return true
         end
-    end
-    if not updater:IsPlaying() and not mouseoverPendingQueries[unitName] then
         if GetTime() - timeToggleOffWindow <= 1 then
             -- We just toggled off the window but we are still receiving messages from last update, keep filtering.
             return true
         end
-        return false  -- Roster window is not open, don't filter.
-    end
-    if rosterLeaversTimes[unitName] then
-        if GetTime() - rosterLeaversTimes[unitName] <= 1 then
-            return true  -- We received a message for a unit who just left the group, filter it.
+        if not updater:IsPlaying() then
+            return false  -- Roster window is not open, don't filter.
         end
+    end
+    if rosterLeaversTimes[unitName] and GetTime() - rosterLeaversTimes[unitName] <= 1 then
+        return true  -- We received a message for a unit who just left the group, filter it.
     end
     if not processedChatFrame then
         processedChatFrame = chatFrame
