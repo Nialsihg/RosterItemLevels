@@ -1,5 +1,5 @@
 # RosterItemLevels
-Mouseover any character lets you see its item level. Also displays the roles, specs and item levels for the whole group in a draggable window and allows you to report the data.
+Mouseover any character lets you see its item level. Also displays the roles, specs and item levels for the whole group in a dedicated window and allows you to report the data.
 #### [Screenshots](https://imgur.com/a/pUwof20)
 ## Features
 * Shows the item level in the tooltip when you mouseover a player.
