@@ -1,13 +1,16 @@
 # RosterItemLevels
-[Mouseover any character lets you see its item level. Also displays the roles, specs and item levels for the whole group in a little window and allows you to report the data.](https://imgur.com/a/JA6EbOr)
-
+Mouseover any character lets you see its item level. Also displays the roles, specs and item levels for the whole group in a draggable window and allows you to report the data.
+#### [Screenshots](https://imgur.com/a/JA6EbOr)
 ## Features
-* [Show the item level in the tooltip when you mouseover a player.](https://imgur.com/LTO8t8N.jpg)
-* [Show item level, specialization and role of each group member.](https://imgur.com/KeBmcIe.jpg)
-* [Report window with multiple channels (Guild, Whisper, Whisper Target, Raid, Party, Instance).](https://imgur.com/YFMn5oy.jpg)
-* [Fully configurable in the dedicated options panel.](https://imgur.com/kJcpOlL.png)
-* Minimap icon for ease of use or command /ilvls [report]
-
+* Shows the item level in the tooltip when you mouseover a player.
+* Shows the item level, specialization and role of each group member.
+* Report window with multiple channels (Guild, Whisper, Whisper Target, Raid, Party, Instance).
+* Fully configurable in the dedicated options panel.
 ## Usage
-Minimap icon or command:  
-/ilvls [report]
+Mouseover any character will display its item level in the tooltip.  
+Left-click the minimap icon or type the command "/ilvls" to toggle on/off the roster window.  
+Shift-click the miniamp icon or type the command "/ilvls report" to toggle on/off the report window.
+## Important note
+You must have at least **one Chat Tab with "System Messages" enabled** for the addon to work properly.
+## Technical details
+RosterItemLevels is built on top of Freakz command ".ilvl". It sends the command and expects a system message in response. This process is transparent for the user because the addon sets a filter on the chat.
