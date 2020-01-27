@@ -511,7 +511,7 @@ local function openReportWindow()
         RosterItemLevelsDB.report.channel = value  -- Redraw in-place to add/remove whisper editbox.
         if channel ~= value then
             local pos = {reportWindow:GetPoint()}
-            closeReportWindow() 
+            closeReportWindow()
             openReportWindow()
             reportWindow:SetPoint(unpack(pos))
         end
@@ -863,7 +863,7 @@ function frame:ADDON_LOADED(name)
         checked = mouseoverCheckButton:GetChecked()
         mouseoverCheckButton:SetChecked(checked)
         RosterItemLevelsDB.options.mouseover = checked
-        
+
         RosterItemLevelsDB.options.itemLevelColor = itemLevelColorDropdown.selectedValue
 
         checked = autoToggleCheckButton:GetChecked()
