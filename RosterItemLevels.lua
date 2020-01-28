@@ -643,7 +643,7 @@ local function toggleOffRosterWindow()
     wipe(scheduledQueries)
 end
 
-local function toggleOnRosterWindow(autoCancelAFK, delay)
+local function toggleOnRosterWindow(delay)
     delay = delay or 0
     C_Timer.After(delay, function()
         if not updater:IsPlaying() then
@@ -652,7 +652,7 @@ local function toggleOnRosterWindow(autoCancelAFK, delay)
             animation:SetDuration(0.05)
             updater:SetScript("OnLoop", renderRosterItemLevelsTooltip)
             updater:Play()
-            queryRosterItemLevels(autoCancelAFK)
+            queryRosterItemLevels(true)
             ticker = C_Timer.NewTicker(updateDelay, function() queryRosterItemLevels(false) end)
             -- Reduces the CPU usage by lowering the refresh rate of the roster window once it has fully loaded.
             C_Timer.After(1, function() animation:SetDuration(0.5) end)
@@ -757,7 +757,7 @@ function frame:GROUP_JOINED()
     if updater:IsPlaying() then
         startNewUpdate(true, 0.5)
     elseif RosterItemLevelsDB.options.autoToggle then
-        toggleOnRosterWindow(true, 1)  -- Toggle on after 1 second. We have to wait for group data to be available.
+        toggleOnRosterWindow(1)  -- Toggle on after 1 second. We have to wait for group data to be available.
     end
 end
 
@@ -775,7 +775,7 @@ function frame:PLAYER_LOGIN()  -- Fires on login / reload.
     end
     cleanRosterTable()
     if RosterItemLevelsPerCharDB.window.wasShown then
-        toggleOnRosterWindow(true, 1)  -- Toggle on after 1 second. We have to wait for group data to be available.
+        toggleOnRosterWindow(1)  -- Toggle on after 1 second. We have to wait for group data to be available.
     end
 end
 
@@ -1078,7 +1078,7 @@ function SlashCmdList.ROSTERITEMLEVELS(msg, editbox)
         if updater:IsPlaying() then
             toggleOffRosterWindow()
         else
-            toggleOnRosterWindow(true)
+            toggleOnRosterWindow()
         end
     else
         print("Help")
