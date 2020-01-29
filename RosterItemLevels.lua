@@ -433,7 +433,9 @@ local function queryUnitItemLevel(unitID)
             scheduledQueries[unitName] = true
         end
         connectedBeforeQuery[unitName] = true
-        SendChatMessage(".ilvl " .. unitName, "EMOTE")  -- filterMessageSystem() will fire on server's response.
+        -- Send the command in the EMOTE chat type to avoid flooding restrictions.
+        -- The server will respond with a system message which will trigger filterMessageSystem()
+        SendChatMessage(".ilvl " .. unitName, "EMOTE")
     end
 end
 
