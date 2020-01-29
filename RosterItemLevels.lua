@@ -412,17 +412,19 @@ local function filterMessageSystem(chatFrame, event, msg, ...)
         mouseoverPendingQueries[unitName] = nil
         return true  -- Filter messages sent from mouseovers.
     end
-    if not scheduledQueries[unitName] then
-        return false  -- Don't filter messages coming from a manual query.
+    if not scheduledQueries[unitName] or (scheduledQueries[unitName].lastUpdateTime and (GetTime() - scheduledQueries[unitName].lastUpdateTime >= 0.1)) then
+        return false  -- Don't filter messages coming from a player's manual query.
     end
     if chatFrame ~= processedChatFrame then
-        -- Filter duplicates coming from other chat frames.
+        -- The query has already been processed in processedChatFrame.
+        -- Filter duplicate messages coming from other chat frames.
         return true
     end
     local unitID = unitNameToUnitID(unitName)
     if unitID then
         updateUnitInfo(unitName, unitID, itemLevel)
     end
+    scheduledQueries[unitName].lastUpdateTime = GetTime()
     return true
 end
 
@@ -430,7 +432,8 @@ local function queryUnitItemLevel(unitID)
     local unitName = UnitName(unitID)
     if isValidCharacterName(unitName) and UnitIsConnected(unitID) then
         if not mouseoverPendingQueries[unitName] then
-            scheduledQueries[unitName] = true
+            scheduledQueries[unitName] = {}
+            scheduledQueries[unitName].lastUpdateTime = nil
         end
         connectedBeforeQuery[unitName] = true
         -- Send the command in the EMOTE chat type to avoid flooding restrictions.
