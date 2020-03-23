@@ -41,7 +41,8 @@ local reportWindow  -- Used to store AceGUI's Window container object.
 local ticker, updater, animation, processedChatFrame
 local updateDelay = 5  -- Elapsed time between updates in seconds.
 local timeToggleOffWindow = 0
-local mouseoverPlayersTable, mouseoverPendingQueries, rosterLeaversTimes, connectedBeforeQuery, scheduledQueries = {}, {}, {}, {}, {}
+local mouseoverPlayersTable, rosterLeaversTimes, playersConnectedBeforeQuery = {}, {}, {}
+local pendingQueries = {mouseover = {}, addon = {}}
 
 local minLowItemLevel, maxLowItemLevel, maxHighItemLevel = 0, 700, 959
 -- Note: We don't merge the tables to keep a better color accuracy.
@@ -261,7 +262,7 @@ local function cleanRosterTable()
     for i = 1, #removedFromRoster do
         local unitName = removedFromRoster[i]
         rosterLeaversTimes[unitName] = GetTime()
-        scheduledQueries[unitName] = nil
+        pendingQueries.addon[unitName] = nil
         RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName] = nil
     end
     RosterItemLevelsPerCharDB.rosterInfo.sortedRosterTableKeys = sortRosterTableKeys(sortDesc)
@@ -355,7 +356,7 @@ local function characterDisconnectedAfterQuery()
         for i = 1, GetNumGroupMembers() do
             local unitID = "raid" .. i
             local unitName = UnitName(unitID)
-            if not UnitIsConnected(unitID) and connectedBeforeQuery[unitName] then
+            if not UnitIsConnected(unitID) and playersConnectedBeforeQuery[unitName] then
                 return true
             end
         end
@@ -363,7 +364,7 @@ local function characterDisconnectedAfterQuery()
         for i = 1, GetNumSubgroupMembers() do
             local unitID = "party" .. i
             local unitName = UnitName(unitID)
-            if not UnitIsConnected(unitID) and connectedBeforeQuery[unitName] then
+            if not UnitIsConnected(unitID) and playersConnectedBeforeQuery[unitName] then
                 return true
             end
         end
@@ -383,7 +384,7 @@ local function filterMessageSystem(chatFrame, event, msg, ...)
     if not unitName then  -- Server response is in Romanian.
         unitName, itemLevel = string_match(msg, "Equipped ilvl pentru (%a+): ([0-9]+)")
     end
-    if not mouseoverPendingQueries[unitName] then
+    if not pendingQueries.mouseover[unitName] then
         if mouseoverPlayersTable[unitName] and GetTime() - mouseoverPlayersTable[unitName].lastUpdateTime <= 1 then
             return true
         end
@@ -401,7 +402,7 @@ local function filterMessageSystem(chatFrame, event, msg, ...)
     if not processedChatFrame then
         processedChatFrame = chatFrame
     end
-    if mouseoverPendingQueries[unitName] then
+    if pendingQueries.mouseover[unitName] then
         mouseoverPlayersTable[unitName].ilvl = tonumber(itemLevel)
         mouseoverPlayersTable[unitName].lastUpdateTime = GetTime()
         if unitName == GameTooltip:GetUnit() then  -- The tooltip still displays the unit we received a message for.
@@ -409,31 +410,37 @@ local function filterMessageSystem(chatFrame, event, msg, ...)
             GameTooltip:AddDoubleLine("Item Level", mouseoverPlayersTable[unitName].ilvl, r, g, b, r, g, b)
             GameTooltip:Show()
         end
-        mouseoverPendingQueries[unitName] = nil
+        pendingQueries.mouseover[unitName] = nil
         return true  -- Filter messages sent from mouseovers.
     end
-    if not scheduledQueries[unitName] then
-        return false  -- Don't filter messages coming from a manual query.
+    if not pendingQueries.addon[unitName] or
+            (pendingQueries.addon[unitName].lastUpdateTime and (GetTime() - pendingQueries.addon[unitName].lastUpdateTime >= 0.1)) then
+        return false  -- Don't filter messages coming from a player's manual query.
     end
     if chatFrame ~= processedChatFrame then
-        -- Filter duplicates coming from other chat frames.
+        -- The query has already been processed in processedChatFrame.
+        -- Filter duplicate messages coming from other chat frames.
         return true
     end
     local unitID = unitNameToUnitID(unitName)
     if unitID then
         updateUnitInfo(unitName, unitID, itemLevel)
     end
+    pendingQueries.addon[unitName].lastUpdateTime = GetTime()
     return true
 end
 
 local function queryUnitItemLevel(unitID)
     local unitName = UnitName(unitID)
     if isValidCharacterName(unitName) and UnitIsConnected(unitID) then
-        if not mouseoverPendingQueries[unitName] then
-            scheduledQueries[unitName] = true
+        if not pendingQueries.mouseover[unitName] then
+            pendingQueries.addon[unitName] = {}
+            pendingQueries.addon[unitName].lastUpdateTime = nil
         end
-        connectedBeforeQuery[unitName] = true
-        SendChatMessage(".ilvl " .. unitName, "EMOTE")  -- filterMessageSystem() will fire on server's response.
+        playersConnectedBeforeQuery[unitName] = true
+        -- Send the command in the EMOTE chat type to avoid flooding restrictions.
+        -- The server will respond with a system message which will trigger filterMessageSystem()
+        SendChatMessage(".ilvl " .. unitName, "EMOTE")
     end
 end
 
@@ -511,7 +518,7 @@ local function openReportWindow()
         RosterItemLevelsDB.report.channel = value  -- Redraw in-place to add/remove whisper editbox.
         if channel ~= value then
             local pos = {reportWindow:GetPoint()}
-            closeReportWindow() 
+            closeReportWindow()
             openReportWindow()
             reportWindow:SetPoint(unpack(pos))
         end
@@ -640,10 +647,10 @@ local function toggleOffRosterWindow()
     ticker:Cancel()
     updater:Stop()
     rosterItemLevelsTooltip:Hide()
-    wipe(scheduledQueries)
+    wipe(pendingQueries.addon)
 end
 
-local function toggleOnRosterWindow(autoCancelAFK, delay)
+local function toggleOnRosterWindow(delay)
     delay = delay or 0
     C_Timer.After(delay, function()
         if not updater:IsPlaying() then
@@ -652,7 +659,7 @@ local function toggleOnRosterWindow(autoCancelAFK, delay)
             animation:SetDuration(0.05)
             updater:SetScript("OnLoop", renderRosterItemLevelsTooltip)
             updater:Play()
-            queryRosterItemLevels(autoCancelAFK)
+            queryRosterItemLevels(true)
             ticker = C_Timer.NewTicker(updateDelay, function() queryRosterItemLevels(false) end)
             -- Reduces the CPU usage by lowering the refresh rate of the roster window once it has fully loaded.
             C_Timer.After(1, function() animation:SetDuration(0.5) end)
@@ -675,8 +682,8 @@ local function mouseoverTooltipHook()
                     GameTooltip:AddDoubleLine("Item Level", mouseoverPlayersTable[unitName].ilvl, r, g, b, r, g, b)
                     GameTooltip:Show()
                 else  -- Item level is too old, send a new query.
-                    if not mouseoverPendingQueries[unitName] then
-                        mouseoverPendingQueries[unitName] = true
+                    if not pendingQueries.mouseover[unitName] then
+                        pendingQueries.mouseover[unitName] = true
                         queryUnitItemLevel(unitID)
                     end
                 end
@@ -686,8 +693,8 @@ local function mouseoverTooltipHook()
                     local _, class = UnitClass(unitID)
                     mouseoverPlayersTable[unitName].class = class
                 end
-                if not mouseoverPendingQueries[unitName] then
-                    mouseoverPendingQueries[unitName] = true
+                if not pendingQueries.mouseover[unitName] then
+                    pendingQueries.mouseover[unitName] = true
                     queryUnitItemLevel(unitID)
                 end
             end
@@ -757,7 +764,7 @@ function frame:GROUP_JOINED()
     if updater:IsPlaying() then
         startNewUpdate(true, 0.5)
     elseif RosterItemLevelsDB.options.autoToggle then
-        toggleOnRosterWindow(true, 1)  -- Toggle on after 1 second. We have to wait for group data to be available.
+        toggleOnRosterWindow(1)  -- Toggle on after 1 second. We have to wait for group data to be available.
     end
 end
 
@@ -775,7 +782,7 @@ function frame:PLAYER_LOGIN()  -- Fires on login / reload.
     end
     cleanRosterTable()
     if RosterItemLevelsPerCharDB.window.wasShown then
-        toggleOnRosterWindow(true, 1)  -- Toggle on after 1 second. We have to wait for group data to be available.
+        toggleOnRosterWindow(1)  -- Toggle on after 1 second. We have to wait for group data to be available.
     end
 end
 
@@ -863,7 +870,7 @@ function frame:ADDON_LOADED(name)
         checked = mouseoverCheckButton:GetChecked()
         mouseoverCheckButton:SetChecked(checked)
         RosterItemLevelsDB.options.mouseover = checked
-        
+
         RosterItemLevelsDB.options.itemLevelColor = itemLevelColorDropdown.selectedValue
 
         checked = autoToggleCheckButton:GetChecked()
@@ -1078,7 +1085,7 @@ function SlashCmdList.ROSTERITEMLEVELS(msg, editbox)
         if updater:IsPlaying() then
             toggleOffRosterWindow()
         else
-            toggleOnRosterWindow(true)
+            toggleOnRosterWindow()
         end
     else
         print("Help")
