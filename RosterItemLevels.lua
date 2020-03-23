@@ -440,7 +440,7 @@ local function queryUnitItemLevel(unitID)
         playersConnectedBeforeQuery[unitName] = true
         -- Send the command in the EMOTE chat type to avoid flooding restrictions.
         -- The server will respond with a system message which will trigger filterMessageSystem()
-        SendChatMessage(".ilvl " .. unitName, "EMOTE")
+        SendChatMessage(".ilevel " .. unitName, "EMOTE")
     end
 end
 
@@ -674,7 +674,7 @@ local function mouseoverTooltipHook()
     end
     local unitName, unitID = GameTooltip:GetUnit()
     if UnitExists(unitID) and UnitIsPlayer(unitID) then  -- Also true when unitID isn't connected but is in our group.
-        if UnitIsConnected(unitID) then  -- Must be connected to use command .ilvl.
+        if UnitIsConnected(unitID) then  -- Must be connected to use command .ilevel.
             if mouseoverPlayersTable[unitName] then
                 if mouseoverPlayersTable[unitName].lastUpdateTime and
                         GetTime() - mouseoverPlayersTable[unitName].lastUpdateTime < updateDelay then
