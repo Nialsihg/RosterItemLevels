@@ -1,4 +1,17 @@
 ------------------------------------------------------------------------
+r91 | funkydude | 2018-04-25 06:50:13 +0000 (Wed, 25 Apr 2018) | 1 line
+Changed paths:
+   M /trunk/.pkgmeta
+   A /trunk/CallbackHandler-1.0
+   A /trunk/CallbackHandler-1.0/CallbackHandler-1.0.lua
+   M /trunk/LibGroupInSpecT-1.1.toc
+   A /trunk/LibStub
+   A /trunk/LibStub/LibStub.lua
+   A /trunk/embeds.xml
+   M /trunk/lib.xml
+
+Structural cleanups, bump toc version.
+------------------------------------------------------------------------
 r90 | funkydude | 2018-04-25 06:23:22 +0000 (Wed, 25 Apr 2018) | 1 line
 Changed paths:
    M /trunk/LibGroupInSpecT-1.1.lua

@@ -90,7 +90,7 @@ local MAX_ATTEMPTS = 2
 lib.debug = false
 local function debug (...)
   if lib.debug then  -- allow programmatic override of debug output by client addons
-    print (...) 
+    print (...)
   end
 end
 --@end-debug@]===]
