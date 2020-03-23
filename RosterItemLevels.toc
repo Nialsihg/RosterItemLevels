@@ -1,4 +1,4 @@
-## Interface: 70200
+## Interface: 70300
 ## Title: RosterItemLevels
 ## Author: Nialsihg/Littlebit
 ## Notes: A simple WoW Freakz AddOn to quickly see the item levels of people.
