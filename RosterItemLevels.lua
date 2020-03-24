@@ -44,7 +44,7 @@ local timeToggleOffWindow = 0
 local mouseoverPlayersTable, rosterLeaversTimes, playersConnectedBeforeQuery = {}, {}, {}
 local pendingQueries = {mouseover = {}, addon = {}}
 
-local minLowItemLevel, maxLowItemLevel, maxHighItemLevel = 0, 700, 959
+local minLowItemLevel, maxLowItemLevel, maxHighItemLevel = 0, 700, 991
 -- Note: We don't merge the tables to keep a better color accuracy.
 local lowItemLevelColors = {
     [1] = {157, 157, 157},  -- from GRAY (Poor quality)
