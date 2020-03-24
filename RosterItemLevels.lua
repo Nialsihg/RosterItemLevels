@@ -41,7 +41,7 @@ local reportWindow  -- Used to store AceGUI's Window container object.
 local ticker, updater, animation, processedChatFrame
 local updateDelay = 5  -- Elapsed time between updates in seconds.
 local timeToggleOffWindow = 0
-local mouseoverPlayersTable, rosterLeaversTimes, playersConnectedBeforeQuery = {}, {}, {}
+local mouseoverPlayersTable, rosterLeaversTimes = {}, {}
 local pendingQueries = {mouseover = {}, addon = {}}
 
 local minLowItemLevel, maxLowItemLevel, maxHighItemLevel = 0, 700, 991
@@ -351,31 +351,9 @@ local function updateUnitInfo(unitName, unitID, itemLevel)
     RosterItemLevelsPerCharDB.rosterInfo.avgRosterItemLevel = computeAverageRosterItemLevel()
 end
 
-local function characterDisconnectedAfterQuery()
-    if IsInRaid() then
-        for i = 1, GetNumGroupMembers() do
-            local unitID = "raid" .. i
-            local unitName = UnitName(unitID)
-            if not UnitIsConnected(unitID) and playersConnectedBeforeQuery[unitName] then
-                return true
-            end
-        end
-    elseif IsInGroup() then
-        for i = 1, GetNumSubgroupMembers() do
-            local unitID = "party" .. i
-            local unitName = UnitName(unitID)
-            if not UnitIsConnected(unitID) and playersConnectedBeforeQuery[unitName] then
-                return true
-            end
-        end
-    end
-    return false
-end
-
 local function filterMessageSystem(chatFrame, event, msg, ...)
     if string_find(msg, "Invalid character") or string_find(msg, "Caracter invalid") then
-        -- Filter "Invalid character" if we receive it for a character who disconnected after the query was sent.
-        return characterDisconnectedAfterQuery()
+        return true
     end
     if not string_find(msg, "Equipped ilvl for") and not string_find(msg, "Equipped ilvl pentru") then
         return false  -- Not the message we are looking for, don't filter.
@@ -437,7 +415,6 @@ local function queryUnitItemLevel(unitID)
             pendingQueries.addon[unitName] = {}
             pendingQueries.addon[unitName].lastUpdateTime = nil
         end
-        playersConnectedBeforeQuery[unitName] = true
         -- Send the command in the EMOTE chat type to avoid flooding restrictions.
         -- The server will respond with a system message which will trigger filterMessageSystem()
         SendChatMessage(".ilevel " .. unitName, "EMOTE")
