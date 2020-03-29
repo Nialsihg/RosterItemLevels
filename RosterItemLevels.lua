@@ -42,7 +42,7 @@ local ticker, updater, animation, processedChatFrame
 local updateDelay = 5  -- Elapsed time between updates in seconds.
 local timeToggleOffWindow = 0
 local mouseoverPlayersTable, rosterLeaversTimes = {}, {}
-local pendingQueries = {mouseover = {}, addon = {}}
+local pendingQueries = {mouseover = {}, rosterWindow = {}}
 
 local minLowItemLevel, maxLowItemLevel, maxHighItemLevel = 0, 700, 991
 -- Note: We don't merge the tables to keep a better color accuracy.
@@ -262,7 +262,7 @@ local function cleanRosterTable()
     for i = 1, #removedFromRoster do
         local unitName = removedFromRoster[i]
         rosterLeaversTimes[unitName] = GetTime()
-        pendingQueries.addon[unitName] = nil
+        pendingQueries.rosterWindow[unitName] = nil
         RosterItemLevelsPerCharDB.rosterInfo.rosterTable[unitName] = nil
     end
     RosterItemLevelsPerCharDB.rosterInfo.sortedRosterTableKeys = sortRosterTableKeys(sortDesc)
@@ -391,8 +391,7 @@ local function filterMessageSystem(chatFrame, event, msg, ...)
         pendingQueries.mouseover[unitName] = nil
         return true  -- Filter messages sent from mouseovers.
     end
-    if not pendingQueries.addon[unitName] or
-            (pendingQueries.addon[unitName].lastUpdateTime and (GetTime() - pendingQueries.addon[unitName].lastUpdateTime >= 0.1)) then
+    if not pendingQueries.rosterWindow[unitName] then
         return false  -- Don't filter messages coming from a player's manual query.
     end
     if chatFrame ~= processedChatFrame then
@@ -404,7 +403,6 @@ local function filterMessageSystem(chatFrame, event, msg, ...)
     if unitID then
         updateUnitInfo(unitName, unitID, itemLevel)
     end
-    pendingQueries.addon[unitName].lastUpdateTime = GetTime()
     return true
 end
 
@@ -412,12 +410,11 @@ local function queryUnitItemLevel(unitID)
     local unitName = UnitName(unitID)
     if isValidCharacterName(unitName) and UnitIsConnected(unitID) then
         if not pendingQueries.mouseover[unitName] then
-            pendingQueries.addon[unitName] = {}
-            pendingQueries.addon[unitName].lastUpdateTime = nil
+            pendingQueries.rosterWindow[unitName] = true
         end
         -- Send the command in the EMOTE chat type to avoid flooding restrictions.
         -- The server will respond with a system message which will trigger filterMessageSystem()
-        SendChatMessage(".ilevel " .. unitName, "EMOTE")
+        SendChatMessage(".ilvl " .. unitName, "EMOTE")
     end
 end
 
@@ -624,7 +621,7 @@ local function toggleOffRosterWindow()
     ticker:Cancel()
     updater:Stop()
     rosterItemLevelsTooltip:Hide()
-    wipe(pendingQueries.addon)
+    wipe(pendingQueries.rosterWindow)
 end
 
 local function toggleOnRosterWindow(delay)
@@ -651,7 +648,7 @@ local function mouseoverTooltipHook()
     end
     local unitName, unitID = GameTooltip:GetUnit()
     if UnitExists(unitID) and UnitIsPlayer(unitID) then  -- Also true when unitID isn't connected but is in our group.
-        if UnitIsConnected(unitID) then  -- Must be connected to use command .ilevel.
+        if UnitIsConnected(unitID) then  -- Must be connected to use command .ilvl.
             if mouseoverPlayersTable[unitName] then
                 if mouseoverPlayersTable[unitName].lastUpdateTime and
                         GetTime() - mouseoverPlayersTable[unitName].lastUpdateTime < updateDelay then
