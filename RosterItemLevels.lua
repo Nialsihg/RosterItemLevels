@@ -951,7 +951,7 @@ function frame:ADDON_LOADED(name)
         bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
         tile = true,
         tileSize = 16,
-        insets = {left = 2, right = 14, top = 2, bottom = 2}
+        insets = {left = 2, right = 2, top = 2, bottom = 2}
     }
     rosterItemLevelsTooltip:SetFrameStrata("LOW")
     rosterItemLevelsTooltip:SetBackdrop(frameBackdrop)
@@ -961,7 +961,7 @@ function frame:ADDON_LOADED(name)
     rosterItemLevelsTooltip:EnableMouse(true)
     rosterItemLevelsTooltip:SetMovable(1)
     GameTooltip_OnLoad(rosterItemLevelsTooltip)
-    rosterItemLevelsTooltip:SetPadding(16, 0)
+    rosterItemLevelsTooltip:SetPadding(2, 0)
     rosterItemLevelsTooltip:RegisterForDrag("LeftButton")
     rosterItemLevelsTooltip:SetScript("OnDragStart", function(self)
         if not RosterItemLevelsDB.window.locked then
